@@ -45,6 +45,7 @@ def get_interpolation(data_dict, bodyparts, threshold=0.95, interpolation_method
         bodyparts (list): A list of bodyparts to interpolate.
         threshold (float): Likelihood threshold below which interpolation should be performed. Defaults to 0.95.
         interpolation_method (string): Interpolation method used. Default linear interpolation.
+    
     Returns:
         dict: Dictionary with DataFrames that have interpolated values for the specified body parts.
     """   
