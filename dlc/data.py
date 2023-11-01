@@ -6,7 +6,8 @@ from matplotlib.collections import LineCollection
 
 
 
-def get_centroid(data_dict, bodyparts):
+def get_centroid(data_dict, bodyparts): 
+    #TODO: make get the centroid function available for unique files, not only for dicts
     """
     Calculate the centroid of specified bodyparts in each DataFrame in the dictionary.
 
@@ -36,6 +37,7 @@ def get_centroid(data_dict, bodyparts):
 
 
 def get_interpolation(data_dict, bodyparts, threshold=0.95, interpolation_method='linear'):
+    #TODO: make interpolation available for unique files, not only for dicts. 
     """
     Interpolate x,y coordinates for specified body parts in a DataFrame when their likelihood 
     is below a given threshold.

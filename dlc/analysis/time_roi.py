@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import pandas as pd
 from qtpy.QtWidgets import QPushButton, QVBoxLayout, QWidget
+from shapely.geometry import Point, Polygon, box
 
 class ROIDrawer:
     """
@@ -13,7 +14,7 @@ class ROIDrawer:
         num_rois (int): Number of regions of interest to be drawn.
         roi_dataframe (pd.DataFrame or None): DataFrame containing the captured ROI data.
     """   
-    def __init__(self, video_path, num_rois=1):
+    def __init__(self, video_path, save_dir, num_rois=1):
         """
         Initializes the ROIDrawer object with the specified video path and number of ROIs.
 
@@ -24,6 +25,7 @@ class ROIDrawer:
         self.video_path = video_path
         self.num_rois = num_rois
         self.roi_dataframe = None
+        self.save_dir = save_dir
 
     def on_button_click(self, shapes_layer):
         """
@@ -48,7 +50,10 @@ class ROIDrawer:
         self.roi_dataframe = pd.DataFrame(roi_list)  # Save the processed data directly into self.roi_dataframe
 
         print("ROI DataFrame assigned:", self.roi_dataframe)
-        return self.roi_dataframe
+        
+        h5_file_path = self.save_dir
+        self.roi_dataframe.to_hdf(h5_file_path, key='coordinates', mode='w')
+        print("ROI DataFrame saved to:", h5_file_path)
 
     def draw_rois(self):
         """
@@ -72,14 +77,12 @@ class ROIDrawer:
         viewer.add_image(frame)
         shapes_layer = viewer.add_shapes(name='ROIs')
 
-        # Create a widget for the button
         widget = QWidget()
         layout = QVBoxLayout()
         widget.setLayout(layout)
         btn = QPushButton("Save ROIs")
         layout.addWidget(btn)
 
-        # Connect button click to a lambda function
         btn.clicked.connect(lambda: self.on_button_click(shapes_layer))
         btn.clicked.connect(lambda: viewer.close())
 
@@ -87,3 +90,103 @@ class ROIDrawer:
 
         napari.run()
         return self.roi_dataframe
+
+
+class TimeInROI:
+    def __init__(self):
+        """
+        Initialize a TimeInROI object to manage regions of interest (ROIs).
+        """
+        self.rois = []
+        self.roi_shapes = []
+
+    def add_roi(self, shape, coordinates):
+        """
+        Add a region of interest.
+
+        Args:
+            shape (str): Either 'ellipse', 'polygon', or 'rectangle'.
+            coordinates (tuple/list): A tuple or list of coordinates defining the ROI.
+        """ 
+        self.rois.append(coordinates)
+        self.roi_shapes.append(shape)
+
+    def is_point_inside_roi(self, point, roi_index):
+        """
+        Check if a point is inside a specified ROI.
+
+        Args:
+            point (tuple/list): A tuple or list representing the (x, y) coordinates of the point to check.
+            roi_index (int): The index of the ROI to check against.
+
+        Raises:
+            ValueError: If the ROI shape is unknown or unsupported.
+
+        Returns:
+            bool: True if the point is inside the ROI. False otherwise.
+        """        
+        shape = self.roi_shapes[roi_index]
+        coordinates = self.rois[roi_index]
+
+        if shape == 'ellipse':
+            return self._is_point_in_ellipse(point, *coordinates)
+        elif shape == 'polygon':
+            return self._is_point_in_polygon(point, coordinates)
+        elif shape == 'rectangle':
+            return self._is_point_in_rectangle(point, coordinates)
+        else:
+            raise ValueError(f"Unknown shape: {shape}")
+
+    @staticmethod
+    def _is_point_in_ellipse(p, center, radii):
+        """
+        Check if a point is inside an ellipse.
+
+        Args:
+            p (tuple/list): A tuple or list representing the (x, y) coordinates of the point to check.
+            center (tuple/list): A tuple or list representing the (x, y) coordinates of the ellipse's center.
+            radii (tuple/list): A tuple or list representing the semi-major and semi-minor radii of the ellipse.
+
+        Returns:
+            bool: True if the point is inside the ellipse, False otherwise.
+        """        
+        x, y = p
+        h, k = center
+        a, b = radii
+        return ((x - h)**2 / a**2) + ((y - k)**2 / b**2) <= 1
+
+    @staticmethod
+    def _is_point_in_polygon(p, polygon):
+        """
+        Check if a point is inside a polygon using Shapely.
+
+        Args:
+            p (tuple/list): A tuple or list representing the (x, y) coordinates of the point to check.
+            polygon (list): A list of tuples, each representing a vertex of the polygon.
+
+        Returns:
+            bool: True if the point is inside the polygon, False otherwise.
+        """ 
+        point = Point(p)
+        poly = Polygon(polygon)
+        
+        return poly.contains(point)
+
+    @staticmethod
+    def _is_point_in_rectangle(p, rectangle):
+        """
+        Check if a point is inside a rectangle.
+        A rectangle is a polygon, so we could use previously defined function for a polygon.
+
+        Args:
+            p (tuple/list): A tuple or list representing the (x, y) coordinates of the point to check.
+            rectangle (list): A list containing two tuples, each representing a corner of the rectangle.
+
+        Returns:
+            bool: True if the point is inside the rectangle, False otherwise.
+        """       
+        # Assuming the rectangle is represented as [(x1, y1), (x2, y2)]
+        x, y = p
+        (x1, y1), (x2, y2) = rectangle
+        return x1 <= x <= x2 and y1 <= y <= y2
+
