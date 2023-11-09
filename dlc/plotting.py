@@ -2,7 +2,7 @@ import numpy as np
 from matplotlib.collections import LineCollection
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+import pandas as pd
 
 def interpolation_plot(ax, data, title, style='light'):
     """
