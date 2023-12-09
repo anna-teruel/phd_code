@@ -2,62 +2,67 @@ import os
 import pandas as pd
 
 class DataLoader:
-    def __init__(self, h5_path=None, minutes=None, fps=None):
+    def __init__(self, minutes=None, fps=None):
         """
-        Initialize the data loader with the path to the .h5 files, the number of minutes to read, and the fps.
+        Initialize a DataLoader object.
 
         Args:
-            h5_path (str): Path to .h5 files to be processed.
-            minutes (int): Number of minutes of data to be read from each file.
-            fps (int): Frames per second of the data in the files.
+            minutes (int, optional): The duration of the video in minutes. Defaults to None.
+            fps (int, optional): The frames per second (fps) of the video. Defaults to None.
         """
-        self.h5_path = h5_path
         self.minutes = minutes
         self.fps = fps
 
-    def read_data(self, h5_file):
+    def read_data(self, input_path):
         """
-        Reads data from a specified .h5 file for a given duration.
+        Read data from either a single file or a directory.
 
         Args:
-            h5_file (str): Path to the .h5 file to be read.
+            input_path (str): The path to the file or directory containing the data.
+
+        Raises:
+            ValueError: If the provided path does not exist.
 
         Returns:
-            pd.DataFrame: A pandas DataFrame containing the specified duration of data from the .h5 file.
+            pandas.DataFrame or dict: A DataFrame if a single file is read, or a dictionary of
+                                      DataFrames if multiple files are read.
         """
-        df = pd.read_hdf(h5_file)
-        
-        if self.minutes is not None and self.fps is not None:
-            frames = self.fps * 60 * self.minutes  
-            df = pd.read_hdf(h5_file)[:frames]
+        if os.path.isfile(input_path):  # Check if it's a file
+            return self.read_file(input_path)
+
+        elif os.path.isdir(input_path):  # Check if it's a directory
+            return self.read_directory(input_path)
+
+        else:
+            raise ValueError("Provided path does not exist.")
+
+    def read_file(self, file_path):
+        """
+        Read data from a single file.
+
+        Args:
+            file_path (str): The path to the .h5 file.
+
+        Returns:
+            pandas.DataFrame: A DataFrame containing the data from the file.
+        """
+        df = pd.read_hdf(file_path)
         return df
 
-    def get_h5_list(self):
+    def read_directory(self, dir_path, suffix="filtered.h5"):
         """
-        Get a list of .h5 files to be processed within a directory.
+        Reads data from all files in a directory that end with a specified suffix.
+
+        Args:
+            directory_path (str): The path to the directory containing the .h5 files.
+            suffix (str, optional): The suffix that the files should end with. Defaults to 'filtered.h5'.
 
         Returns:
-            h5List (list): List of paths of .h5 files to be processed.
+            dict: A dictionary where keys are file names and values are DataFrames containing the data from each file.
         """
-        h5_list = []
-        for dirpath, dirnames, filenames in os.walk(self.h5_path):
-            for filename in [f for f in filenames if f.endswith("filtered.h5")]:
-                h5_list.append(os.path.join(dirpath, filename))
-        h5_list.sort()
-        return h5_list
-
-    def read_all_data(self):
-        """
-        Reads data from all .h5 files in the provided path for batch processing.
-
-        Returns:
-            dict: A dictionary with file names as keys and dataframes as values.
-        """
-        h5_list = self.get_h5_list()
         data_dict = {}
-        for h5_file in h5_list:
-            df = self.read_data(h5_file)
-            file_name = os.path.basename(h5_file)
-            data_dict[file_name] = df
+        for filename in os.listdir(dir_path):
+            if filename.endswith(suffix):
+                file_path = os.path.join(dir_path, filename)
+                data_dict[filename] = self.read_file(file_path)
         return data_dict
-
