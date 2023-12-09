@@ -25,14 +25,15 @@ class Centroid:
         x_columns = [bp for bp in bodyparts]
         y_columns = [bp for bp in bodyparts]
 
-        centroid_x = np.mean(df.loc[:, (slice(None), x_columns, 'x')].mean(axis=1))
-        centroid_y = np.mean(df.loc[:, (slice(None), y_columns, 'y')].mean(axis=1))
+        centroid_x = df.loc[:, (slice(None), x_columns, 'x')].mean(axis=1)
+        centroid_y = df.loc[:, (slice(None), y_columns, 'y')].mean(axis=1)
 
         DLCscorer = df.columns[0][0]
 
         df.loc[:, (DLCscorer, "centroid", "x")] = centroid_x
         df.loc[:, (DLCscorer, "centroid", "y")] = centroid_y
         return df
+
 
     def get_centroid(self, input_data, bodyparts):
         """

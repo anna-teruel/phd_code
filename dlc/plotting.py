@@ -169,11 +169,16 @@ class InterpolationPlot:
 
 class TrackingPlot:
     def __init__(self, style='light'):
+        self.centroid = Centroid()
+
         self.style = style
         if self.style == 'dark':
             plt.style.use('dark_background')
         elif self.style == 'light':
             plt.style.use('default')
+    
+    def load_data(self, file_path, bodyparts):
+        return self.centroid.get_centroid(file_path, bodyparts)
 
     def density_plot(self, bodypart, cmap='viridis', cbar=True, title=""):
         """
@@ -189,29 +194,49 @@ class TrackingPlot:
             None: Saves the plot as a PDF file.
         """
         plt.figure(figsize=(10, 10))
-        sns.set(style=self.style)
 
-        x_data = bodypart.loc[:, (slice(None), slice(None), 'x')].values.flatten()
-        y_data = bodypart.loc[:, (slice(None), slice(None), 'y')].values.flatten()
-
+        x = bodypart.loc[:, (slice(None), slice(None), 'x')].values.flatten()
+        y = bodypart.loc[:, (slice(None), slice(None), 'y')].values.flatten()
         ax = sns.kdeplot(
-            x=x_data,
-            y=y_data,
-            fill=True,
-            cbar=cbar,
-            cmap=cmap,
-            levels=10,
-            alpha=0.9,
-        )
+                x=x,
+                y=y,
+                fill=True,
+                cmap=cmap,
+                levels=10,
+                alpha=0.9)
+        if cbar:
+            cbar = plt.colorbar(ax.collections[0])
+            cbar_values = cbar.get_ticks()
+            if cbar_values.size > 0:
+                cbar_labels = ["-"] + [""]*(len(cbar_values) - 2) + ["+"] #replace first and last values with labels
+                cbar.set_ticks(cbar_values)
+                cbar.set_ticklabels(cbar_labels)
 
+        
         plt.title(title)
-        ax.set_aspect("equal", adjustable="box")
-        plt.savefig("Density_plot_" + title + ".pdf", format="pdf", dpi=100)
 
-    def line_plot(self):
-        pass  # Implement the line plot function here
+    def line_plot(self, bodypart, title, color='red'):
+        """
+        Generate a line plot for the provided data points.
 
-    def plot_file(self, file_path, bodyparts, title):
+        Args:
+            bodypart (pandas.DataFrame): A dataframe containing columns 'x' and 'y'.
+            title (str): Title for the plot.
+            color (str, optional): Color of the line plot. Defaults to 'red'.
+
+        Returns:
+            None: Saves the plot as a PDF file.
+        """        
+        plt.figure(figsize=(10, 10))
+
+        x = bodypart.loc[:, (slice(None), slice(None), 'x')].values.flatten()
+        y = bodypart.loc[:, (slice(None), slice(None), 'y')].values.flatten()
+
+        plt.plot(x, y, marker='o', markersize=2, linestyle='-', color=color)
+        plt.title(title)
+        
+
+    def plot_file(self, file_path, bodyparts, title, plot_type="density", save=False, save_directory='.', save_filename='plot.png'):
         """
         Plot data from a single file.
 
@@ -223,13 +248,22 @@ class TrackingPlot:
         Returns:
             None: Saves the plot as a PDF file.
         """
-        # Load data from file (you may need to adapt this part)
-        data = pd.read_hdf(file_path)
+        data = self.load_data(file_path, bodyparts)
+        centroid_df = data.loc[:, (slice(None), 'centroid', slice(None))]
 
-        # Perform necessary operations on data and call plot functions
-        # Example: self.density_plot(data, cmap='viridis', cbar=True, title=title)
+        if plot_type == "density":
+            self.density_plot(centroid_df, title=f"{title}_centroid")
+        elif plot_type == "line":
+            self.line_plot(centroid_df, title=f"{title}_centroid")
 
-    def plot_directory(self, directory_path, bodyparts, title):
+        if save:
+            save_path = Path(save_directory) / save_filename
+            Path(save_directory).mkdir(parents=True, exist_ok=True)  # Create directory if it does not exist
+            plt.savefig(save_path)
+        else:
+            plt.show()
+
+    def plot_directory(self, dir_path, bodyparts, title, plot_type="density", save=False, save_directory='.', save_filename='plot.png'):
         """
         Plot data from all files in a directory.
 
@@ -241,10 +275,17 @@ class TrackingPlot:
         Returns:
             None: Saves the plots for all files in the directory.
         """
-        # List all .h5 files in the directory
-        h5_files = [f for f in os.listdir(directory_path) if f.endswith(".h5")]
+        data_dict = self.load_data(dir_path, bodyparts)
 
-        for file in h5_files:
-            file_path = os.path.join(directory_path, file)
-            self.plot_file(file_path, bodyparts, title + "_" + os.path.splitext(file)[0])
-
+        for file, centroid in data_dict.items():
+            centroid_df = centroid[('DLCscorer', 'centroid')]
+            if plot_type == "density":
+                self.density_plot(centroid_df, title=f"{title}_{file}_centroid")
+            elif plot_type == "line":
+                self.line_plot(centroid_df, title=f"{title}_{file}_centroid")
+            if save:
+                save_path = Path(save_directory) / save_filename
+                Path(save_directory).mkdir(parents=True, exist_ok=True)  # Create directory if it does not exist
+                plt.savefig(save_path)
+        if not save:
+            plt.show()
