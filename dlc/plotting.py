@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 from pathlib import Path
+import os
 
 from dlc.data import Interpolation
 from dlc.data import Centroid
@@ -174,15 +175,11 @@ class InterpolationPlot:
             save_directory (str, optional): Directory where the plot should be saved if 'save' is True. Defaults to '.'.
             save_filename (str, optional): Filename for the saved plot if 'save' is True. Defaults to 'plot.png'.
         """
-        file_name_long = Path(file_path).name  # complete file name with extension
-        dlc_index = file_name_long.find(
-            "DLC"
-        )  # all deeplabcut files include project info starts with "DLC"
-        file_name = (
-            file_name_long[:dlc_index] if dlc_index != -1 else Path(file_path).stem
-        )  # remove extra info from title
+        name = self.data_loader.get_file_name(file_path)
+        full_title = f"{title} - {name}"
 
-        title_plot = f"{title} - {file_name}"
+        title_plot = f"{title} - {full_title}"
+        
         self.plot_bodyparts(file_path, bodyparts, title_plot)
 
         if save:
@@ -217,6 +214,7 @@ class TrackingPlot:
             style (str, optional): Plot style ('light' or 'dark'). Defaults to 'light'.
         """
         self.centroid = Centroid()
+        self.data_loader = DataLoader()
 
         self.style = style
         if self.style == "dark":
@@ -314,11 +312,13 @@ class TrackingPlot:
         """
         data = self.load_data(file_path, bodyparts)
         centroid_df = data.loc[:, (slice(None), "centroid", slice(None))]
+        name = self.data_loader.get_file_name(file_path)
+        full_title = f"{title} - {name}"
 
         if plot_type == "density":
-            self.density_plot(centroid_df, title=f"{title}_centroid")
+            self.density_plot(centroid_df, title=f"{full_title}")
         elif plot_type == "line":
-            self.line_plot(centroid_df, title=f"{title}_centroid")
+            self.line_plot(centroid_df, title=f"{full_title}")
 
         if save:
             save_path = Path(save_directory) / save_filename
@@ -354,19 +354,20 @@ class TrackingPlot:
         Returns:
             None: Displays or saves the plots for all files in the directory.
         """
-        data_dict = self.load_data(dir_path, bodyparts)
+        data_dict = self.data_loader.read_directory(dir_path)
 
-        for file, centroid in data_dict.items():
-            centroid_df = centroid[("DLCscorer", "centroid")]
-            if plot_type == "density":
-                self.density_plot(centroid_df, title=f"{title}_{file}_centroid")
-            elif plot_type == "line":
-                self.line_plot(centroid_df, title=f"{title}_{file}_centroid")
-            if save:
-                save_path = Path(save_directory) / save_filename
-                Path(save_directory).mkdir(
-                    parents=True, exist_ok=True
-                )  # Create directory if it does not exist
-                plt.savefig(save_path)
-        if not save:
-            plt.show()
+        for file_name in data_dict.keys():
+            file_path = os.path.join(dir_path, file_name)
+            
+            name = self.data_loader.get_file_name(file_path)
+            full_title = f"{title} - {name}"
+
+            self.plot_file(
+                file_path=file_path,
+                bodyparts=bodyparts,
+                title=full_title,
+                plot_type=plot_type,
+                save=save,
+                save_directory=save_directory,
+                save_filename=save_filename
+            )
