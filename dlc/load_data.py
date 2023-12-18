@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-import numpy as np
+from pathlib import Path
 
 class DataLoader:
     def __init__(self, minutes=None, fps=None):
@@ -50,20 +50,38 @@ class DataLoader:
         df = pd.read_hdf(file_path)
         return df
 
-    def read_directory(self, dir_path, suffix="filtered.h5"):
+    def read_directory(self, dir_path):
         """
         Reads data from all files in a directory that end with a specified suffix.
 
         Args:
             directory_path (str): The path to the directory containing the .h5 files.
-            suffix (str, optional): The suffix that the files should end with. Defaults to 'filtered.h5'.
+            suffix (tuple, optional): The suffix that the files should end with. Defaults to ('filtered.h5',).
 
         Returns:
             dict: A dictionary where keys are file names and values are DataFrames containing the data from each file.
         """
         data_dict = {}
         for filename in os.listdir(dir_path):
-            if filename.endswith(suffix):
+            if filename.endswith('filtered.h5'):
                 file_path = os.path.join(dir_path, filename)
                 data_dict[filename] = self.read_file(file_path)
         return data_dict
+    
+    def get_file_name(self, file_path): 
+        """_summary_
+
+        Args:
+            file_path (str): The path to the .h5 file.
+
+        Returns:
+            _type_: _description_
+        """        
+        file_name_long = Path(file_path).name  # complete file name with extension
+        dlc_index = file_name_long.find(
+            "DLC"
+        )  # all deeplabcut files include project info starts with "DLC"
+        file_name = (
+            file_name_long[:dlc_index] if dlc_index != -1 else Path(file_path).stem
+        )  # remove extra info from title
+        return file_name
