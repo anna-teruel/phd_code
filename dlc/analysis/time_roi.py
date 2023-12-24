@@ -26,96 +26,139 @@ class ROIDrawer:
             video_path (str): The file path to the video from which a random frame is selected for drawing ROIs.
             num_rois (int, optional): The number of ROIs to be drawn. Defaults to 1.
         """         
-        self.video_path = video_path
-        self.num_rois = num_rois
-        self.roi_dataframe = None
         self.save_dir = save_dir
-
-    def on_button_click(self, shapes_layer):
-        print("Button clicked, processing ROIs...")
-
-        # Existing code to process ROIs and create DataFrame
-        rois_data = shapes_layer.data
-        roi_list = []
-        for index, coords in enumerate(rois_data):
-            for vertex_index, (x, y) in enumerate(coords):
-                roi_list.append({'index': index, 'shape-type': 'polygon', 'vertex-index': vertex_index, 'axis-0': x, 'axis-1': y})
-        self.roi_dataframe = pd.DataFrame(roi_list)
-
-        # Define file paths for saving
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        hdf5_filename = f"{os.path.splitext(os.path.basename(self.video_path))[0]}_{timestamp}.h5"
-        self.h5_file_path = os.path.join(self.save_dir, hdf5_filename)
-        frame_path = self.h5_file_path.replace('.h5', '.png')
-
-        # Draw ROIs on the current frame
-        for shape in rois_data:
-            pts = np.array(shape, np.int32).reshape((-1, 1, 2))
-            cv2.polylines(self.current_frame, [pts], True, (0, 255, 0), 2)  # Change color and thickness as needed
-
-        # Save the ROI DataFrame and the frame with ROIs
-        self.roi_dataframe.to_hdf(self.h5_file_path, key='coordinates', mode='w')
-        cv2.imwrite(frame_path, self.current_frame)
-
-        print("ROI DataFrame saved to:", self.h5_file_path)
-        print("Frame with ROIs saved to:", frame_path)
+        self.num_rois = num_rois
+        self.current_frame = None
+        self.viewer = None
+        self.shapes_layer = None
+        self.video_files = []
+        self.directory = None 
 
 
-    def draw_rois(self):
+    def draw_rois(self, video_path):
         """
-        Launches the Napari viewer, allowing the user to draw ROIs on a randomly selected video frame.
+        Sets up a Napari viewer for drawing ROIs on an image and saves the ROIs.
 
-        This method sets up the Napari viewer with an image layer displaying a random frame from the video.
-        It allows the user to draw the specified number of ROIs, and captures them when the "Save ROIs" button is clicked.
+        Opens a random frame from the video file specified in `self.video_path`, then
+        displays this frame in a Napari viewer. It allows the user to draw Regions of 
+        Interest (ROIs) on this frame. Once the ROIs are drawn and saved using the 
+        provided button in the Napari viewer, the function saves the ROIs' data to 
+        an HDF5 file and the frame with ROIs to a PNG file.
+
+        Args:
+            None
 
         Returns:
-            pandas.DataFrame: A DataFrame containing the captured ROI data with columns 'index', 'shape-type', 
-                              'vertex-index', 'axis-0', 'axis-1', or None if no ROIs are drawn.
-        """         
-        cap = cv2.VideoCapture(self.video_path)
+            tuple: Contains two elements:
+                1. The path to the HDF5 file with the ROI data.
+                2. The path to the PNG image with the drawn ROIs.
+
+        Exceptions:
+            - May raise exceptions related to video file processing or file saving operations.
+        """
+        self.current_frame = None  # Reset the current frame before capturing another one
+        print(f"Drawing ROIs for video: {video_path}")
+
+        # Load the video frame
+        cap = cv2.VideoCapture(video_path)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.set(cv2.CAP_PROP_POS_FRAMES, np.random.randint(total_frames))
         ret, frame = cap.read()
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         cap.release()
 
+        if not ret:
+            print(f"Failed to capture frame from video: {video_path}")
+            return
+
         self.current_frame = frame
+        if self.viewer is None:
+            self.viewer = napari.Viewer()
+        else:
+            self.viewer.layers.clear()  # Clear existing layers
 
-        viewer = napari.Viewer()
-        viewer.add_image(frame)
-        shapes_layer = viewer.add_shapes(name='ROIs')
+        self.viewer.add_image(self.current_frame)
+        self.shapes_layer = self.viewer.add_shapes(name='ROIs')
 
+        # Set up the widget with buttons
         widget = QWidget()
         layout = QVBoxLayout()
         widget.setLayout(layout)
-        btn = QPushButton("Save ROIs")
-        layout.addWidget(btn)
+        btn_save = QPushButton("Save ROIs")
+        layout.addWidget(btn_save)
+        self.viewer.window.add_dock_widget(widget)
 
-        btn.clicked.connect(lambda: self.on_button_click(shapes_layer))
-        btn.clicked.connect(lambda: viewer.close())
+        # Connect button to save function
+        btn_save.clicked.connect(self.on_save_button_clicked)
 
-        viewer.window.add_dock_widget(widget)
+    def on_save_button_clicked(self, shapes_layer):
+        """
+        Process, display, and save Regions of Interest (ROIs) from a Napari shapes layer.
 
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        hdf5_filename = f"{os.path.splitext(os.path.basename(self.video_path))[0]}_{timestamp}.h5"
-        self.h5_file_path = os.path.join(self.save_dir, hdf5_filename)  # Update this line
+        This function takes the ROIs drawn on a Napari viewer, processes their coordinates,
+        displays them with their indices, and saves both the processed ROI data and the 
+        current frame with the ROIs drawn onto it. The ROIs are saved in an HDF5 file, and
+        the image is saved in PNG format. Each ROI is labeled with its index number on the image.
 
-        napari.run()
+        Attributes:
+            shapes_layer: The shapes layer from Napari containing the ROIs. It is expected
+                        to contain the ROI data in a specific format as polygons or shapes.
 
-        frame_path = self.h5_file_path.replace('.h5', '.png')
+        Returns:
+            None: This function does not return a value but prints the paths to the saved files.
+                It saves two files: one HDF5 file containing the ROI data and one PNG image
+                file with the ROIs drawn and labeled.
+
+        Exceptions:
+            This function may raise exceptions related to file I/O operations or if there is
+            an issue with the format of the data in the shapes_layer.
+        """       
+        rois_data = self.shapes_layer.data
+        roi_type = self.shapes_layer.mode
+        roi_list = []
+
+        for index, roi in enumerate(rois_data):
+            corrected_roi = [(y, x) for x, y in roi]
+            for vertex_index, (x_corrected, y_corrected) in enumerate(corrected_roi):
+                roi_list.append({
+                    'index': index,
+                    'shape-type': roi_type,
+                    'vertex-index': vertex_index,
+                    'axis-0': x_corrected,
+                    'axis-1': y_corrected,
+                })
+
+        roi_dataframe = pd.DataFrame(roi_list)
+        hdf5_filename = f"{os.path.splitext(os.path.basename(self.video_path))[0]}_roi.h5"
+        h5_file_path = os.path.join(self.save_dir, hdf5_filename)
+        roi_dataframe.to_hdf(h5_file_path, key='coordinates', mode='w')
+
+        frame_path = h5_file_path.replace('.h5', '.png')
         cv2.imwrite(frame_path, self.current_frame)
 
-        return self.h5_file_path, frame_path 
+        print(f"ROIs saved to {h5_file_path}")
+        print(f"Frame saved to {frame_path}")
+
+        # Close the viewer after saving
+        self.viewer.close()
+
+        # Process the next video if available
+        self.process_next_video()
     
     def batch_processing(self, directory, file_format='mp4'):
-        video_files = [f for f in os.listdir(directory) if f.endswith(file_format)]
-        for video_file in video_files:
-            self.video_path = os.path.join(directory, video_file)
-            print(f"Processing video: {video_file}")
+        self.directory = directory  # Store the directory
+        self.video_files = [f for f in os.listdir(directory) if f.endswith(file_format)]
+        self.process_next_video()  # Start the processing
 
-            # Draw ROIs for each video
-            hdf5_path, frame_path = self.draw_rois()
-            print(f"Processed video {video_file}, ROIs saved to {hdf5_path}, frame saved to {frame_path}")
+
+    def process_next_video(self):
+        if not self.video_files:
+            print("No more videos to process.")
+            return  # No more files to process
+
+        video_file = self.video_files.pop(0)
+        self.video_path = os.path.join(self.directory, video_file)  # Use the stored directory
+        self.draw_rois(self.video_path)
 
 
 
@@ -244,7 +287,7 @@ class PolygonROI(ROI):
             vertices = group[['axis-0', 'axis-1']].values.tolist()
             return {'roi': cls(vertices), 'params': {'vertices': vertices}}
 
-        polygons, parameters = extract_roi_data(df, 'add_polygon', polygon_callback)
+        polygons, parameters = extract_roi_data(df, 'polygon', polygon_callback)
         print("Extracted polygons:", polygons)  # Debug print
         return polygons, parameters
 
