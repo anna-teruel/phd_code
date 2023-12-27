@@ -13,19 +13,21 @@ class ROIDrawer:
     """
     A class for drawing and capturing regions of interest (ROIs) on a video frame using Napari.
 
-    Attributes:
-        video_path (str): Path to the video file.
-        num_rois (int): Number of regions of interest to be drawn.
-        roi_dataframe (pd.DataFrame or None): DataFrame containing the captured ROI data.
+    This class provides functionality to draw ROIs on video frames and save the ROI data 
+    and the annotated frame. It uses Napari for visualization and interaction.
+
     """   
     def __init__(self, video_path, save_dir, num_rois=1):
         """
-        Initializes the ROIDrawer object with the specified video path and number of ROIs.
+        Initializes the ROIDrawer object with the specified video path, save directory, and number of ROIs.
 
         Args:
-            video_path (str): The file path to the video from which a random frame is selected for drawing ROIs.
+            video_path (str): The file path to the video for drawing ROIs.
+            save_dir (str): The directory where ROI data and images will be saved.
             num_rois (int, optional): The number of ROIs to be drawn. Defaults to 1.
-        """         
+        """ 
+        self.video_path = video_path
+    
         self.save_dir = save_dir
         self.num_rois = num_rois
         self.current_frame = None
@@ -35,32 +37,25 @@ class ROIDrawer:
         self.directory = None 
 
 
-    def draw_rois(self, video_path):
+    def draw_rois(self):
         """
-        Sets up a Napari viewer for drawing ROIs on an image and saves the ROIs.
+        Sets up a Napari viewer for drawing ROIs on a video frame and saving the ROIs.
 
-        Opens a random frame from the video file specified in `self.video_path`, then
-        displays this frame in a Napari viewer. It allows the user to draw Regions of 
-        Interest (ROIs) on this frame. Once the ROIs are drawn and saved using the 
-        provided button in the Napari viewer, the function saves the ROIs' data to 
-        an HDF5 file and the frame with ROIs to a PNG file.
+        Opens a random frame from the video file and displays it in a Napari viewer.
+        Users can draw Regions of Interest (ROIs) on the frame. Once the ROIs are drawn,
+        the 'Save ROIs' button saves the ROI data to an HDF5 file and the annotated frame to a PNG file.
 
         Args:
             None
 
         Returns:
-            tuple: Contains two elements:
-                1. The path to the HDF5 file with the ROI data.
-                2. The path to the PNG image with the drawn ROIs.
-
-        Exceptions:
-            - May raise exceptions related to video file processing or file saving operations.
+            None
         """
         self.current_frame = None  # Reset the current frame before capturing another one
-        print(f"Drawing ROIs for video: {video_path}")
+        print(f"Drawing ROIs for video: {self.video_path}")
 
         # Load the video frame
-        cap = cv2.VideoCapture(video_path)
+        cap = cv2.VideoCapture(self.video_path)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.set(cv2.CAP_PROP_POS_FRAMES, np.random.randint(total_frames))
         ret, frame = cap.read()
@@ -68,7 +63,7 @@ class ROIDrawer:
         cap.release()
 
         if not ret:
-            print(f"Failed to capture frame from video: {video_path}")
+            print(f"Failed to capture frame from video: {self.video_path}")
             return
 
         self.current_frame = frame
@@ -77,7 +72,8 @@ class ROIDrawer:
         else:
             self.viewer.layers.clear()  # Clear existing layers
 
-        self.viewer.add_image(self.current_frame)
+        image_layer_name = f"Frame-{np.random.randint(10000)}"
+        self.viewer.add_image(self.current_frame, name=image_layer_name)
         self.shapes_layer = self.viewer.add_shapes(name='ROIs')
 
         # Set up the widget with buttons
@@ -91,28 +87,23 @@ class ROIDrawer:
         # Connect button to save function
         btn_save.clicked.connect(self.on_save_button_clicked)
 
-    def on_save_button_clicked(self, shapes_layer):
+    def on_save_button_clicked(self):
         """
-        Process, display, and save Regions of Interest (ROIs) from a Napari shapes layer.
+        Processes and saves the drawn ROIs when the 'Save ROIs' button is clicked.
 
-        This function takes the ROIs drawn on a Napari viewer, processes their coordinates,
-        displays them with their indices, and saves both the processed ROI data and the 
-        current frame with the ROIs drawn onto it. The ROIs are saved in an HDF5 file, and
-        the image is saved in PNG format. Each ROI is labeled with its index number on the image.
+        This function processes the coordinates of the drawn ROIs, annotates them on the frame,
+        and saves the ROI data to an HDF5 file. It also saves the annotated frame as a PNG image.
+        Each ROI is labeled with its index number on the image.
 
-        Attributes:
-            shapes_layer: The shapes layer from Napari containing the ROIs. It is expected
-                        to contain the ROI data in a specific format as polygons or shapes.
-
+        Args: 
+            None
+            
         Returns:
-            None: This function does not return a value but prints the paths to the saved files.
-                It saves two files: one HDF5 file containing the ROI data and one PNG image
-                file with the ROIs drawn and labeled.
-
-        Exceptions:
-            This function may raise exceptions related to file I/O operations or if there is
-            an issue with the format of the data in the shapes_layer.
-        """       
+            None: Prints the paths to the saved HDF5 and PNG files.
+        
+        Raises:
+            Exceptions related to file I/O operations or data format issues.
+        """      
         rois_data = self.shapes_layer.data
         roi_type = self.shapes_layer.mode
         roi_list = []
@@ -133,34 +124,23 @@ class ROIDrawer:
         h5_file_path = os.path.join(self.save_dir, hdf5_filename)
         roi_dataframe.to_hdf(h5_file_path, key='coordinates', mode='w')
 
+        for roi_index, roi in enumerate(rois_data):
+            corrected_roi = [(y, x) for x, y in roi]
+            pts = np.array(corrected_roi, np.int32).reshape((-1, 1, 2))
+            self.current_frame = cv2.polylines(self.current_frame, [pts], True, (0, 255, 0), 2)
+
+            # Find a representative point to place the index label
+            label_point = np.mean(pts, axis=0).ravel()
+            cv2.putText(self.current_frame, f"roi{roi_index}", (int(label_point[0]), int(label_point[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+
         frame_path = h5_file_path.replace('.h5', '.png')
         cv2.imwrite(frame_path, self.current_frame)
 
-        print(f"ROIs saved to {h5_file_path}")
-        print(f"Frame saved to {frame_path}")
-
-        # Close the viewer after saving
+        # Close the viewer
         self.viewer.close()
 
-        # Process the next video if available
-        self.process_next_video()
-    
-    def batch_processing(self, directory, file_format='mp4'):
-        self.directory = directory  # Store the directory
-        self.video_files = [f for f in os.listdir(directory) if f.endswith(file_format)]
-        self.process_next_video()  # Start the processing
-
-
-    def process_next_video(self):
-        if not self.video_files:
-            print("No more videos to process.")
-            return  # No more files to process
-
-        video_file = self.video_files.pop(0)
-        self.video_path = os.path.join(self.directory, video_file)  # Use the stored directory
-        self.draw_rois(self.video_path)
-
-
+        print(f"ROIs saved to {h5_file_path}")
+        print(f"Frame saved to {frame_path}")
 
 #Utility function
 def extract_roi_data(df, shape_type, roi_callback):
@@ -287,7 +267,7 @@ class PolygonROI(ROI):
             vertices = group[['axis-0', 'axis-1']].values.tolist()
             return {'roi': cls(vertices), 'params': {'vertices': vertices}}
 
-        polygons, parameters = extract_roi_data(df, 'polygon', polygon_callback)
+        polygons, parameters = extract_roi_data(df, 'add_polygon', polygon_callback)
         print("Extracted polygons:", polygons)  # Debug print
         return polygons, parameters
 
@@ -356,11 +336,12 @@ class TimeinRoi:
     A class to manage and compute time spent in various regions of interest (ROIs) 
     based on tracking data.
     """    
-    def __init__(self):
+    def __init__(self, fps):
         """
         Initializes a new TimeinRoi instance with an empty list of ROIs.
         """        
         self.rois = []
+        self.fps = fps
 
     def add_roi(self, roi):
         """
@@ -403,40 +384,52 @@ class TimeinRoi:
             for i, roi in enumerate(self.rois):
                 if roi.is_point_inside_roi(point):
                     time_in_rois[i] += 1
-        return time_in_rois
+                    
+        time_seconds = [time / self.fps for time in time_in_rois]
+        return time_seconds
     
-    def time_in_rois_dir(self, directory, scorer, body_part):
+    def time_in_rois_dir(self, directory, rois, scorer, body_part):
         """
         Processes a directory of DeepLabCut HDF5 files to calculate the time spent in each ROI for a specified body part.
-        This function iterates over all HDF5 files in the given directory that end with 'filtered.h5'. For each file, 
-        it extracts the tracking data of the specified body part and calculates the time spent in each ROI defined in the 
-        TimeInRoi object.
+        
+        This function iterates over all HDF5 files in the given directory that end with 'filtered.h5'.
+        For each file, it uses the provided ROIs to calculate the time spent in each region based on the tracking data.
 
         Args:
-            directory (str): The path to the directory containing the HDF5 files.
-            scorer (str): The scorer name as per the HDF5 file's structure, used to identify the tracking data.
-            body_part (str): The name of the body part to track (e.g., 'nose').
+            directory (str): Path to the directory containing the HDF5 files.
+            rois (dict): A dictionary mapping file base names to lists of ROI objects.
+            scorer (str): The scorer name as per the HDF5 file's structure.
+            body_part (str): The body part to track (e.g., 'nose').
 
         Returns:
-            pd.DataFrame: A DataFrame containing the results, with columns for file name, ROI index, and time spent in each ROI.
-
+            pd.DataFrame: A DataFrame with columns for file name, ROI index, and time spent in each ROI.
+        
         Raises:
             Exception: If an error occurs while processing a file, the function prints the error message and continues with the next file.
-        """       
+        """      
         results = []
         for filename in os.listdir(directory):
             if filename.endswith('filtered.h5'):
                 try:
-                    file_path = os.path.join(directory, filename)
-                    tracking_data = self.extract_tracking_data(file_path, scorer, body_part)
-                    time_in_rois = self.time_in_rois(tracking_data)
+                    base_name = filename.replace(scorer + '_filtered.h5', '')
+                    if base_name in rois:
+                        self.rois.clear()
+                        for roi in rois[base_name]:
+                            self.add_roi(roi)
 
-                    for i, time_in_roi in enumerate(time_in_rois):
-                        results.append({
-                            'file': filename,
-                            'roi_index': i,
-                            'time_in_roi': time_in_roi
-                        })
+                        # Process tracking data for this file
+                        file_path = os.path.join(directory, filename)
+                        tracking_data = self.extract_tracking_data(file_path, scorer, body_part)
+                        time_in_rois = self.time_in_rois(tracking_data)
+
+                        for i, time_in_roi in enumerate(time_in_rois):
+                            results.append({
+                                'file': filename,
+                                'roi_index': i,
+                                'time_in_roi': time_in_roi
+                            })
+                    else:
+                        print(f"No corresponding ROI data for {filename}. Skipping...")
                 except Exception as e:
                     print(f"Error processing file {filename}: {e}")
         return pd.DataFrame(results)
