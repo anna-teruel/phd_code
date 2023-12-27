@@ -50,7 +50,7 @@ class DataLoader:
         df = pd.read_hdf(file_path)
         return df
 
-    def read_directory(self, dir_path):
+    def read_directory(self, dir_path, suffix=("filtered.h5",)):
         """
         Reads data from all files in a directory that end with a specified suffix.
 
@@ -63,7 +63,7 @@ class DataLoader:
         """
         data_dict = {}
         for filename in os.listdir(dir_path):
-            if filename.endswith('filtered.h5'):
+            if filename.endswith(suffix):
                 file_path = os.path.join(dir_path, filename)
                 data_dict[filename] = self.read_file(file_path)
         return data_dict
