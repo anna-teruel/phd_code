@@ -1,3 +1,9 @@
+"""
+This script provides a framework for defining regions of interest (ROIs) of various shapes on a video frame 
+using the Napari library, determining if a point is within a given ROI, and calculating the time spent in 
+each ROI. It also includes functionality for saving the ROI data and the annotated frame to a specified directory.
+@author Anna Teruel-Sanchis, 2023
+"""
 import napari
 import cv2
 import os
