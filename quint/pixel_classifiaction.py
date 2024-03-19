@@ -5,15 +5,11 @@ for all images organized in different subdirectories.
 """
 
 import imageio
-import matplotlib.pyplot as plt
 import h5py
 import os
 from pathlib import Path
 from ilastik.experimental.api import PixelClassificationPipeline
-import numpy
 from xarray import DataArray
-import imageio.v3 as iio
-from matplotlib import pyplot as plt
 
 def batch_probabilities(dir, project):
     """
@@ -26,7 +22,7 @@ def batch_probabilities(dir, project):
     """
     pipeline = PixelClassificationPipeline.from_ilp_file(project)
     
-    for subdir, files in os.walk(dir):
+    for subdir, dirs, files in os.walk(dir):
         for file in files:
             if file.endswith(".png"):
                 file_path = os.path.join(subdir, file)
