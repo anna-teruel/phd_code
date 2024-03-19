@@ -1,3 +1,8 @@
+"""
+Plotting module for visualizing animal tracking data.
+@author Anna Teruel-Sanchis, 2023
+"""
+
 import numpy as np
 from matplotlib.collections import LineCollection
 import matplotlib.pyplot as plt

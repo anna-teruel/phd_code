@@ -1,3 +1,10 @@
+"""
+This script merges multiple '.h5' files from each session's DeepLabCut subdirectory within 
+a given root directory into a single DataFrame per session. Data from minicam are divided
+in different subdirectories, and thus we need to merge the files to have a single DataFrame.
+@author Anna Teruel-Sanchis, 2023
+"""
+
 import os
 import pandas as pd
 

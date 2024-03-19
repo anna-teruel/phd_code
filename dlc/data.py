@@ -1,3 +1,8 @@
+"""
+Data preprocessing and analysis functions for DeepLabCut data.
+@author Anna Teruel-Sanchis, 2023
+"""
+
 import os
 import pandas as pd
 import numpy as np

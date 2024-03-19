@@ -1,3 +1,8 @@
+"""
+Loading data functions from .h5 files.
+@author Anna Teruel-Sanchis, 2023
+"""
+
 import os
 import pandas as pd
 from pathlib import Path
