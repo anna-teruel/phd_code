@@ -66,6 +66,8 @@ def process_directory(root_dir):
     """
     for root, dirs, files in os.walk(root_dir):
         for file in files:
+            if "My_V4_Miniscope" not in root:
+                continue
             if file.endswith('.avi') and not file.startswith('p_'):
                 input_path = os.path.join(root, file)
                 process_video(input_path, root)
