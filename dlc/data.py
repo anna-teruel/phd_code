@@ -6,6 +6,9 @@ Data preprocessing and analysis functions for DeepLabCut data.
 import os
 import pandas as pd
 import numpy as np
+import glob
+import re
+import subprocess
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 
@@ -164,3 +167,42 @@ class Centroid:
 
         else:
             raise ValueError("Provided path does not exist.")
+
+
+class Concatenate:
+    def __init__(self, dir):
+        self.dir = dir
+        self.sessions = self.extract_sessions()
+        self.output_dir = os.path.join(dir, 'concatenated_files')
+        os.makedirs(self.output_dir, exist_ok=True)
+
+    def extract_sessions(self):
+        filenames = os.listdir(self.dir)
+        sessions = set()
+        for filename in filenames:
+            match = re.match(r"(.*?-s\d+)-\d", filename)
+            if match:
+                sessions.add(match.group(1))
+        return list(sessions)
+
+    def concatenate_h5(self):
+        for session in self.sessions:
+            h5_files = glob.glob(os.path.join(self.dir, f"{session}*.h5"))
+            h5_dfs = [pd.read_hdf(file) for file in h5_files]
+            if h5_dfs:
+                h5_concat = pd.concat(h5_dfs, ignore_index=True)
+                output_file = os.path.join(self.output_dir, f'{session}_concatenated.h5')
+                h5_concat.to_hdf(output_file, key='df', mode='w')
+
+    def concatenate_videos(self, videotype='.avi'):
+        for session in self.sessions:
+            video_files = sorted(glob.glob(os.path.join(self.dir, f"{session}*{videotype}")))
+            if video_files:
+                temp_file = os.path.join(self.output_dir, "temp.txt")
+                with open(temp_file, "w") as f:
+                    for video_file in video_files:
+                        f.write(f"file '{video_file}'\n")
+                output_video_path = os.path.join(self.output_dir, f'{session}_concatenated{videotype}')
+                command = f"ffmpeg -f concat -safe 0 -i {temp_file} -c copy {output_video_path}"
+                subprocess.call(command, shell=True)
+                os.remove(temp_file)
