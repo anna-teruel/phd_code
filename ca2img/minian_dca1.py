@@ -199,6 +199,8 @@ def initialize(Y_fm_chk,
     Returns:
         None. The function saves the results to disk.
     """
+    print(f'Processing directory: {intpath}')
+
     print('Starting max projection')
     max_proj = save_minian(
         Y_fm_chk.max("frame").rename("max_proj"), **param_save_minian
@@ -218,6 +220,7 @@ def initialize(Y_fm_chk,
     print(f"Y_hw_chk shape: {Y_hw_chk.shape}")
     print(f"max_proj shape: {max_proj.shape}")
     print(f"seeds_final shape: {seeds_final.shape}")
+    print(f"seeds_final: {seeds_final}")
     seeds_final = seeds_merge(Y_hw_chk, max_proj, seeds_final, **param_seeds_merge)
 
     print('Initializing spatial matrix A')
@@ -230,8 +233,24 @@ def initialize(Y_fm_chk,
         C_init.rename("C_init"), intpath, overwrite=True, chunks={"unit_id": 1, "frame": -1}
     )
 
-    print('Merging units in A and C')
-    A, C = unit_merge(A_init, C_init, **param_init_merge)
+    if not (A_init == 0).all():
+        print('Merging units in A and C')
+        try:
+            A, C = unit_merge(A_init, C_init, **param_init_merge)
+            assert not np.isnan(A.values).any(), "A contains NaN values"
+            assert not np.isnan(C.values).any(), "C contains NaN values"
+
+            A = save_minian(A.rename("A"), intpath, overwrite=True)
+            C = save_minian(C.rename("C"), intpath, overwrite=True)
+        except ValueError as e:
+            print(f"Error during unit_merge: {e}")
+            print("Skipping unit merge due to empty inputs.")
+            A = A_init
+            C = C_init
+    else:
+        print('No overlap between units, skipping unit_merge')
+        A = A_init
+        C = C_init
     A = save_minian(A.rename("A"), intpath, overwrite=True)
     C = save_minian(C.rename("C"), intpath, overwrite=True)
     print('Saving C_chk')
@@ -242,7 +261,6 @@ def initialize(Y_fm_chk,
         overwrite=True,
         chunks={"unit_id": -1, "frame": chk[0]["frame"]},
     )
-
 
     print('Updating background')
     b, f = update_background(Y_fm_chk, A, C_chk)
