@@ -170,22 +170,40 @@ class Centroid:
 
 
 class Concatenate:
+    """
+    A class used to concatenate video and Deeplabcut h5 files
+    """    
     def __init__(self, dir):
+        """
+        Constructs all the necessary attributes for the Concatenate object.
+
+        Args:
+            dir (str): directory where the files are located
+        """        
         self.dir = dir
         self.sessions = self.extract_sessions()
         self.output_dir = os.path.join(dir, 'concatenated_files')
         os.makedirs(self.output_dir, exist_ok=True)
 
     def extract_sessions(self):
+        """
+        Extracts the unique sessions from the file names in the directory.
+
+        Returns:
+            (list): A list of unique sessions
+        """        
         filenames = os.listdir(self.dir)
         sessions = set()
         for filename in filenames:
-            match = re.match(r"(.*?-s\d+)-\d", filename)
+            match = re.match(r"(.*?-s\d+(-anosmic)*)-\d", filename)
             if match:
                 sessions.add(match.group(1))
         return list(sessions)
 
     def concatenate_h5(self):
+        """
+        Concatenates all h5 files in each session and saves them in the output directory.
+        """        
         for session in self.sessions:
             h5_files = glob.glob(os.path.join(self.dir, f"{session}*.h5"))
             h5_dfs = [pd.read_hdf(file) for file in h5_files]
@@ -195,6 +213,12 @@ class Concatenate:
                 h5_concat.to_hdf(output_file, key='df', mode='w')
 
     def concatenate_videos(self, videotype='.avi'):
+        """
+        Concatenates all video files in each session and saves them in the output directory.
+
+        Args:
+            videotype (str, optional): video format. Defaults to '.avi'.
+        """        
         for session in self.sessions:
             video_files = sorted(glob.glob(os.path.join(self.dir, f"{session}*{videotype}")))
             if video_files:
