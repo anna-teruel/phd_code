@@ -208,6 +208,7 @@ def initialize(Y_fm_chk,
 
     print('Initializing seeds')
     seeds = seeds_init(Y_fm_chk, **param_seeds_init)
+    print('Number of seeds detected is ' + str(len(seeds)))
 
     print('Refining seeds with PNR')
     seeds, pnr, gmm = pnr_refine(Y_hw_chk, seeds, **param_pnr_refine)
@@ -217,21 +218,22 @@ def initialize(Y_fm_chk,
 
     print('Merging seeds')
     seeds_final = seeds[seeds["mask_ks"] & seeds["mask_pnr"]].reset_index(drop=True)
-    print(f"Y_hw_chk shape: {Y_hw_chk.shape}")
-    print(f"max_proj shape: {max_proj.shape}")
-    print(f"seeds_final shape: {seeds_final.shape}")
-    print(f"seeds_final: {seeds_final}")
+    print('Number of seeds_final detected is ' + str(len(seeds_final)))
     seeds_final = seeds_merge(Y_hw_chk, max_proj, seeds_final, **param_seeds_merge)
+    print('Number of seeds_final detected is ' + str(len(seeds_final)))
 
     print('Initializing spatial matrix A')
     A_init = initA(Y_hw_chk, seeds_final[seeds_final["mask_mrg"]], **param_initialize)
     A_init = save_minian(A_init.rename("A_init"), intpath, overwrite=True)
+    print("Does A_init contain NaN values?", A_init.isnull().any().compute())
 
     print('Initializing temporal matrix C')
     C_init = initC(Y_fm_chk, A_init)
     C_init = save_minian(
         C_init.rename("C_init"), intpath, overwrite=True, chunks={"unit_id": 1, "frame": -1}
     )
+    print("Does C_init contain NaN values?", C_init.isnull().any().compute())
+
 
     if not (A_init == 0).all():
         print('Merging units in A and C')
@@ -242,6 +244,8 @@ def initialize(Y_fm_chk,
 
             A = save_minian(A.rename("A"), intpath, overwrite=True)
             C = save_minian(C.rename("C"), intpath, overwrite=True)
+            print("Does A contain NaN values?", A.isnull().any().compute())
+            print("Does C contain NaN values?", C.isnull().any().compute())
         except ValueError as e:
             print(f"Error during unit_merge: {e}")
             print("Skipping unit merge due to empty inputs.")
@@ -251,8 +255,11 @@ def initialize(Y_fm_chk,
         print('No overlap between units, skipping unit_merge')
         A = A_init
         C = C_init
-    A = save_minian(A.rename("A"), intpath, overwrite=True)
-    C = save_minian(C.rename("C"), intpath, overwrite=True)
+        A = save_minian(A.rename("A"), intpath, overwrite=True)
+        C = save_minian(C.rename("C"), intpath, overwrite=True)
+        print("Does A contain NaN values?", A.isnull().any().compute())
+        print("Does C contain NaN values?", C.isnull().any().compute())
+
     print('Saving C_chk')
     print(f"chk type: {type(chk)}, value: {chk}")
     C_chk = save_minian(

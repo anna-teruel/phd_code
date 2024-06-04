@@ -82,9 +82,8 @@ def convert_to_mjpeg(input_video, output_dir):
     """
     command = [
         'ffmpeg',
+        '-y',
         '-i', input_video,
-        '-c:v', 'mjpeg',
-        '-q:v', '3',
         output_dir
     ]
     subprocess.run(command, check=True)
