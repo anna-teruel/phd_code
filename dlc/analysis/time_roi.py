@@ -171,6 +171,12 @@ def extract_roi_data(df, shape_type, roi_callback):
             parameters[f"{shape_type}{index}"] = param['params']
     return rois, parameters
 
+def get_fps(video_path):
+    video = cv2.VideoCapture(video_path)
+    fps = video.get(cv2.CAP_PROP_FPS)
+    video.release()
+    return fps
+
 class ROI(ABC):
     """
     Abstract base class for a region of interest (ROI).
@@ -217,10 +223,10 @@ class EllipseROI(ROI):
         def ellipse_callback(group):
             axis_0_values = group['axis-0'].values
             axis_1_values = group['axis-1'].values
-            center = ((axis_0_values.min() + axis_0_values.max()) / 2, 
-                      (axis_1_values.min() + axis_1_values.max()) / 2)
-            radii = ((axis_0_values.max() - axis_0_values.min()) / 2, 
-                     (axis_1_values.max() - axis_1_values.min()) / 2)
+            center = ((axis_0_values.min() + axis_0_values.max()) / 2, # x-coordinate
+                      (axis_1_values.min() + axis_1_values.max()) / 2) # y-coordinate
+            radii = ((axis_0_values.max() - axis_0_values.min()) / 2, # semi MINOR axis
+                     (axis_1_values.max() - axis_1_values.min()) / 2) #s emi MAJOR axis
             return {'roi': cls(center, radii), 'params': {'center': center, 'rad': radii}}
         return extract_roi_data(df, 'add_ellipse', ellipse_callback)
 
@@ -394,7 +400,7 @@ class TimeinRoi:
         time_seconds = [time / self.fps for time in time_in_rois]
         return time_seconds
     
-    def time_in_rois_dir(self, directory, rois, scorer, body_part):
+    def time_in_rois_dir(self, directory, rois, scorer, body_part, file_endswith='filtered.h5', filename_replace = None):
         """
         Processes a directory of DeepLabCut HDF5 files to calculate the time spent in each ROI for a specified body part.
         
@@ -412,18 +418,20 @@ class TimeinRoi:
         
         Raises:
             Exception: If an error occurs while processing a file, the function prints the error message and continues with the next file.
-        """      
+        """
+        if filename_replace is None:
+            filename_replace = scorer + '_filtered.h5'
+            
         results = []
         for filename in os.listdir(directory):
-            if filename.endswith('filtered.h5'):
+            if filename.endswith(file_endswith):
                 try:
-                    base_name = filename.replace(scorer + '_filtered.h5', '')
+                    base_name = filename.replace(filename_replace, '')
                     if base_name in rois:
                         self.rois.clear()
                         for roi in rois[base_name]:
                             self.add_roi(roi)
 
-                        # Process tracking data for this file
                         file_path = os.path.join(directory, filename)
                         tracking_data = self.extract_tracking_data(file_path, scorer, body_part)
                         time_in_rois = self.time_in_rois(tracking_data)
