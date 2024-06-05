@@ -227,6 +227,6 @@ class Concatenate:
                     for video_file in video_files:
                         f.write(f"file '{video_file}'\n")
                 output_video_path = os.path.join(self.output_dir, f'{session}_concatenated{videotype}')
-                command = f"ffmpeg -f concat -safe 0 -i {temp_file} -c copy {output_video_path}"
+                command = f"ffmpeg -y -f concat -safe 0 -i {temp_file} -c copy {output_video_path}"
                 subprocess.call(command, shell=True)
                 os.remove(temp_file)
