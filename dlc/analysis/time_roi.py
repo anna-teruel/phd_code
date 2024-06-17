@@ -412,6 +412,8 @@ class TimeinRoi:
             rois (dict): A dictionary mapping file base names to lists of ROI objects.
             scorer (str): The scorer name as per the HDF5 file's structure.
             body_part (str): The body part to track (e.g., 'nose').
+            file_endswith (str):
+            filename_replace (str):  
 
         Returns:
             pd.DataFrame: A DataFrame with columns for file name, ROI index, and time spent in each ROI.
@@ -420,7 +422,7 @@ class TimeinRoi:
             Exception: If an error occurs while processing a file, the function prints the error message and continues with the next file.
         """
         if filename_replace is None:
-            filename_replace = scorer + '_filtered.h5'
+            filename_replace = scorer + file_endswith
             
         results = []
         for filename in os.listdir(directory):
