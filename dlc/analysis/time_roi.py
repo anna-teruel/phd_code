@@ -397,8 +397,11 @@ class TimeinRoi:
                 if roi.is_point_inside_roi(point):
                     time_in_rois[i] += 1
                     
-        time_seconds = [time / self.fps for time in time_in_rois]
-        return time_seconds
+        if self.fps is not None:
+            time_seconds = [time / self.fps for time in time_in_rois]
+            return time_seconds
+        else:
+            return time_in_rois
     
     def time_in_rois_dir(self, directory, rois, scorer, body_part, file_endswith='filtered.h5', filename_replace = None):
         """
