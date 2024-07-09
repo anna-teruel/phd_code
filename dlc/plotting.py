@@ -143,9 +143,7 @@ class InterpolationPlot:
         )  # 2 columns for before and after
         fig.suptitle(title)
 
-        if (
-            num_bodyparts == 1
-        ):  # If there's only one body part, we make sure all_axes is a 2D array
+        if num_bodyparts == 1:  # If there's only one body part, we make sure all_axes is a 2D array
             all_axes = [all_axes]
 
         for i, bp in enumerate(bodyparts):
@@ -240,7 +238,14 @@ class TrackingPlot:
         """
         return self.centroid.get_centroid(file_path, bodyparts)
 
-    def density_plot(self, bodypart, cmap="viridis", cbar=True, title=""):
+    def density_plot(self, 
+                 bodypart, 
+                 cmap="viridis", 
+                 cbar=True, 
+                 title="", 
+                 width=11.34, 
+                 height=3.35, 
+    ):
         """
         Generate a 2D kernel density estimate (KDE) plot for the provided data points.
 
@@ -249,15 +254,20 @@ class TrackingPlot:
             cmap (str, optional): Colormap for the KDE plot. Defaults to 'viridis'.
             cbar (bool, optional): Whether to display a colorbar. Defaults to True.
             title (str, optional): Title for the plot. Defaults to an empty string.
+            width (int, optional): Width of the plot in inches. Defaults to 10.
+            height (int, optional): Height of the plot in inches. Defaults to 10.
+            xlim (tuple, optional): X-axis limits. Defaults to (0, 1000).
+            ylim (tuple, optional): Y-axis limits. Defaults to (0, 300).
 
         Returns:
             None: Displays the KDE plot.
         """
-        plt.figure(figsize=(10, 10))
+        plt.figure(figsize=(width, height))
 
         x = bodypart.loc[:, (slice(None), slice(None), "x")].values.flatten()
         y = bodypart.loc[:, (slice(None), slice(None), "y")].values.flatten()
         ax = sns.kdeplot(x=x, y=y, fill=True, cmap=cmap, levels=10, alpha=0.9)
+
         if cbar:
             cbar = plt.colorbar(ax.collections[0])
             cbar_values = cbar.get_ticks()
@@ -269,6 +279,9 @@ class TrackingPlot:
                 cbar.set_ticklabels(cbar_labels)
 
         plt.title(title)
+        plt.xlabel('X Coordinate')
+        plt.ylabel('Y Coordinate')
+        plt.show()
 
     def line_plot(self, bodypart, title, color="red"):
         """
@@ -299,6 +312,9 @@ class TrackingPlot:
         save=False,
         save_directory=".",
         save_filename="plot.png",
+        cmap='viridis',
+        width=10,
+        height=10,
     ):
         """
         Plot data from a single file.
@@ -321,7 +337,7 @@ class TrackingPlot:
         full_title = f"{title} - {name}"
 
         if plot_type == "density":
-            self.density_plot(centroid_df, title=f"{full_title}")
+            self.density_plot(centroid_df, title=f"{full_title}", cmap = cmap, width=width, height=height)
         elif plot_type == "line":
             self.line_plot(centroid_df, title=f"{full_title}")
 
@@ -330,7 +346,7 @@ class TrackingPlot:
             Path(save_directory).mkdir(
                 parents=True, exist_ok=True
             )  # Create directory if it does not exist
-            plt.savefig(save_path)
+            plt.savefig(save_path, dpi=300, format="svg")
         else:
             plt.show()
 
@@ -343,6 +359,9 @@ class TrackingPlot:
         save=False,
         save_directory=".",
         save_filename="plot.png",
+        cmap='viridis',
+        width=10,
+        height=10,
     ):
         """
         Plot data from all files in a directory.
@@ -374,5 +393,10 @@ class TrackingPlot:
                 plot_type=plot_type,
                 save=save,
                 save_directory=save_directory,
-                save_filename=save_filename
+                save_filename=name + '.svg',
+                cmap=cmap,
+                width=width,
+                height=width,
             )
+
+        
