@@ -140,13 +140,14 @@ class Centroid:
         df.loc[:, (DLCscorer, "centroid", "y")] = centroid_y
         return df
 
-    def get_centroid(self, input_data, bodyparts):
+    def get_centroid(self, input_data, bodyparts, save = False):
         """
         Get centroid for single or multiple DataFrames.
 
         Args:
             input_data (str): Path to .h5 file/s.
             bodyparts (list): List of bodyparts for centroid calculation.
+            save (bool): if you want to save the DataFrame(s) to h5 files. Default False
 
         Returns:
             dict or pd.DataFrame: Dictionary with centroids or single DataFrame with centroid.
@@ -156,7 +157,10 @@ class Centroid:
             # Read the single file
             df = loader.read_data(input_data)
             return self.calculate_centroid(df, bodyparts)
+            if save:
+                df.to_hdf(input_data, key='df', mode='w')
 
+            return df
         elif os.path.isdir(input_data):
             # Read all files in the directory
             data_dict = loader.read_directory(input_data)
@@ -164,6 +168,15 @@ class Centroid:
                 key: self.calculate_centroid(df, bodyparts)
                 for key, df in data_dict.items()
             }
+            if save:
+                result = {
+                    key: self.calculate_centroid(df, bodyparts)
+                    for key, df in data_dict.items()
+                }
+                if save:
+                    for key, df in result.items():
+                        df.to_hdf(os.path.join(input_data, f"{key}_centroid.h5"), key='df', mode='w')
+                return result
 
         else:
             raise ValueError("Provided path does not exist.")

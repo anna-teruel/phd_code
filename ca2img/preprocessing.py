@@ -1,6 +1,6 @@
 """
 Raw video preprocessing before running the analysis pipeline.
-@author Anna Teruel-Sanchis, 2023
+@author Anna Teruel-Sanchis, 2024
 """
 
 import cv2
