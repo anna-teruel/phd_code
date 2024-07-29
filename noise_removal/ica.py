@@ -1,6 +1,7 @@
 """Apply PCA and ICA to denoise videos."""
 
 import json
+import math
 import os
 import tkinter as tk
 from abc import ABC, abstractmethod
@@ -19,7 +20,7 @@ class ComponentSelector(ABC):
     """Abstract base class for selecting components from ICA/PCA analysis."""
 
     @abstractmethod
-    def select_components(self, component_images: np.ndarray, cmap: str) -> List[bool]:
+    def select_components(self, component_images: np.ndarray) -> List[bool]:
         """Select components from the provided component images.
 
         Args:
@@ -39,9 +40,7 @@ class ComponentSelectorGUI(ComponentSelector):
         """Initialize the component selector GUI."""
         self.is_component_selected = []
 
-    def select_components(
-        self, component_images: np.ndarray, cmap: str = "bwr"
-    ) -> List[bool]:
+    def select_components(self, component_images: np.ndarray) -> List[bool]:
         """Launch the GUI to select components from the provided images.
 
         Args:
@@ -54,7 +53,7 @@ class ComponentSelectorGUI(ComponentSelector):
         self.root = tk.Tk()
         self.root.title("ICA Component Selector")
 
-        self.cmap = cmap
+        self.cmap = "bwr"
         self.components = component_images
         self.is_component_selected = [
             tk.BooleanVar(value=True) for _ in range(self.components.shape[0])
@@ -153,6 +152,34 @@ class ComponentSelectorGUI(ComponentSelector):
             plt.close(self.canvas.figure)  # Close the last figure
         self.root.quit()
         self.root.destroy()
+
+
+class AutoSelector(ComponentSelector):
+
+    def select_components(self, component_images: np.ndarray) -> List[bool]:
+        component_images = abs(component_images)
+        component_images = cv2.normalize(component_images, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)  # type: ignore
+        is_component_selected: list[bool] = []
+        for image in component_images:
+            is_component_selected.append(self.detectLines(image))
+
+        return is_component_selected
+
+    def detectLines(self, img: np.ndarray) -> bool:
+        """Detect if an image contains lines, modify parameters if performance not optimal."""
+        ret, img = cv2.threshold(
+            img, np.quantile(img, 0.95), 255, cv2.THRESH_BINARY
+        )  # type: ignore
+        lines = cv2.HoughLinesP(
+            img,
+            rho=1,  # resolution of the parameter rho (1 pixel)
+            theta=math.pi / 2,  # resolution of the theta parameter (1 degree)
+            threshold=200,
+            lines=None,
+            minLineLength=150,
+            maxLineGap=5,
+        )
+        return lines is None
 
 
 class ComponentAnalysis(ABC):
@@ -437,7 +464,7 @@ class Preprocessor(ABC):
     """Abstract base class for preprocessors that operate on non-flat data."""
 
     @abstractmethod
-    def process(self, data: np.ndarray) -> np.ndarray:
+    def preprocess(self, data: np.ndarray) -> np.ndarray:
         """Process the input data and return the processed data.
 
         Args:
@@ -448,9 +475,13 @@ class Preprocessor(ABC):
         """
         pass
 
+
+class Postprocessor(ABC):
+    """Abstract base class for postprocessors that operate on non-flat data."""
+
     @abstractmethod
-    def reverse_process(self, data: np.ndarray) -> np.ndarray:
-        """Reverse the processing of the data and return the original data.
+    def postprocess(self, data: np.ndarray) -> np.ndarray:
+        """Process the output video, maybe reversing preprocessing or adding another postprocess to final video.
 
         Args:
             data (np.ndarray): Processed data to be reversed.
@@ -461,7 +492,7 @@ class Preprocessor(ABC):
         pass
 
 
-class MeanFramesSelector(Preprocessor):
+class MeanFramesSelector(Preprocessor, Postprocessor):
     """Select frames based on brightness mean to filter out non-noisy frames."""
 
     def __init__(self, batch_size: int = 3):
@@ -474,7 +505,7 @@ class MeanFramesSelector(Preprocessor):
         self.selected_frames: List[bool] = []
         self.original_not_used_frames: np.ndarray
 
-    def process(self, frames: np.ndarray) -> np.ndarray:
+    def preprocess(self, frames: np.ndarray) -> np.ndarray:
         """Analyze and select frames with noise based on brightness mean.
 
         Args:
@@ -516,7 +547,7 @@ class MeanFramesSelector(Preprocessor):
         )
         return frames[self.selected_frames]
 
-    def reverse_process(self, data: np.ndarray) -> np.ndarray:
+    def postprocess(self, data: np.ndarray) -> np.ndarray:
         """Reconstruct the full video including non-noisy frames in their correct order.
 
         Args:
@@ -545,7 +576,7 @@ class MeanFramesSelector(Preprocessor):
 class GaussianSpatialFilter(Preprocessor):
     """Apply a Gaussian spatial filter to video frames (one-way)."""
 
-    def __init__(self, sigma: float = 1):
+    def __init__(self, sigma: float = 1.5):
         """Initialize GaussianSpatialFilter with a specified sigma value.
 
         Args:
@@ -553,7 +584,7 @@ class GaussianSpatialFilter(Preprocessor):
         """
         self.sigma = sigma
 
-    def process(self, data: np.ndarray) -> np.ndarray:
+    def preprocess(self, data: np.ndarray) -> np.ndarray:
         """Apply the spatial Gaussian filter to each frame.
 
         Args:
@@ -564,17 +595,6 @@ class GaussianSpatialFilter(Preprocessor):
         """
         print("Applying the spatial gaussian mean filter to each frame.")
         return gaussian_filter(data, sigma=self.sigma, axes=(1, 2))
-
-    def reverse_process(self, data: np.ndarray) -> np.ndarray:
-        """Return the processed data as is (no reverse processing).
-
-        Args:
-            data (np.ndarray): Processed frames.
-
-        Returns:
-            np.ndarray: The same processed frames.
-        """
-        return data
 
 
 class VideoData:
@@ -589,7 +609,7 @@ class VideoData:
         Args:
             video_path (str): Path to the video file.
         """
-        self.video_path = video_path
+        self.path = video_path
         self.frames: np.ndarray
         self.frame_shape: tuple[int, int]
         self.fps: int
@@ -603,7 +623,7 @@ class VideoData:
         Raises:
             ValueError: If the video cannot be loaded or frame shape is incorrect.
         """
-        cap = cv2.VideoCapture(self.video_path)
+        cap = cv2.VideoCapture(self.path)
         frames = []
         frame_shape = None
 
@@ -693,25 +713,26 @@ class VideoAnalyzer:
     def __init__(
         self,
         video_data: VideoData,
-        preprocessors: List[Preprocessor],
-        pca: PCAAnalysis,
-        ica: ICAAnalysis,
+        processors: List[Preprocessor | Postprocessor],
+        pca: PCAAnalysis = PCAAnalysis(),
+        ica: ICAAnalysis = ICAAnalysis(),
     ):
         """Initialize VideoAnalyzer with video data, preprocessors, PCA, ICA, and a selector.
 
         Args:
             video_data (VideoData): The video data to be analyzed.
-            preprocessors (List[Preprocessor]): List of preprocessors to apply to the video data.
+            processors (List[Preprocessor | Postprocessor]): List of processors to apply to the video data.
             pca (PCAAnalysis): PCA analysis instance for dimensionality reduction.
             ica (ICAAnalysis): ICA analysis instance for independent component analysis.
             selector (ComponentSelector, optional): Component selector instance.
                                                     Defaults to IndividualComponentSelectorGUI().
         """
         self.video_data = video_data
-        self.preprocessors = preprocessors
+        self.processors = processors
         self.pca = pca
         self.ica = ica
 
+    # Legacy Code
     def get_variance_images(self) -> np.ndarray:
         """Generate an array of variance images for each component.
 
@@ -737,9 +758,10 @@ class VideoAnalyzer:
             np.ndarray: Preprocessed video data.
         """
         data = self.video_data.frames
-        if self.preprocessors:
-            for preprocessor in self.preprocessors:
-                data = preprocessor.process(data)
+        if self.processors:
+            for processor in self.processors:
+                if isinstance(processor, Preprocessor):
+                    data = processor.preprocess(data)
         return data
 
     def reverse_preprocess_video(self, data) -> np.ndarray:
@@ -751,9 +773,10 @@ class VideoAnalyzer:
         Returns:
             np.ndarray: Video data after reversing the preprocessing.
         """
-        if self.preprocessors:
-            for preprocessor in reversed(self.preprocessors):
-                data = preprocessor.reverse_process(data)
+        if self.processors:
+            for processor in reversed(self.processors):
+                if isinstance(processor, Postprocessor):
+                    data = processor.postprocess(data)
         return data
 
     def decompose_video(self):
@@ -869,6 +892,7 @@ class VideoAnalyzer:
 
 def save_frame_as_image(frame: np.ndarray, filename: str) -> None:
     """Save a single frame as an image file."""
+    frame = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)  # type: ignore
     os.makedirs("intermediate_frames/", exist_ok=True)
     cv2.imwrite(f"intermediate_frames/{filename}", frame)
 
@@ -929,11 +953,13 @@ def save_is_component_selected_json(
                                             selected for the reconstruction or not.
         video_path: path of the video from the analysis, so the name of the file corresponds with it.
     """
-    with open(f"{video_path}_is_component_selected.json", "w") as f:
+    with open(
+        f"{video_path}_is_component_selected_{len(is_component_selected)}.json", "w"
+    ) as f:
         json.dump(is_component_selected, f)
 
 
-def load_is_component_selected_json(video_path: str) -> list[bool]:
+def load_is_component_selected_json(video_path: str, n_components: int) -> list[bool]:
     """Load the list of bools with the information of components that are selected from json.
 
     Args:
@@ -942,7 +968,7 @@ def load_is_component_selected_json(video_path: str) -> list[bool]:
         is_component_selected (list[bool]): list of bools saying if each component is
                                             selected for the reconstruction or not.
     """
-    with open(f"{video_path}_is_component_selected.json", "r") as f:
+    with open(f"{video_path}_is_component_selected_{n_components}.json", "r") as f:
         is_component_selected = json.load(f)
 
     return is_component_selected
@@ -962,12 +988,7 @@ def main(
     # Load video
     video.load_video()
 
-    analyzer = VideoAnalyzer(
-        video,
-        [GaussianSpatialFilter()],
-        PCAAnalysis(),
-        ICAAnalysis(),
-    )
+    analyzer = VideoAnalyzer(video, [GaussianSpatialFilter(1.5)], PCAAnalysis())
 
     # Choose how many components to use
     analyzer.choose_n_pca_components_interactive()
@@ -977,7 +998,7 @@ def main(
 
     # Select ICA components
     # Two options: component maps and variance images (more expensive)
-    is_component_selected = ComponentSelectorGUI().select_components(
+    is_component_selected = AutoSelector().select_components(
         analyzer.get_component_maps()
     )
     save_is_component_selected_json(is_component_selected, video_path)
@@ -989,7 +1010,7 @@ def main(
     non_selected_components = [not selected for selected in is_component_selected]
     video.save_frames_as_mp4(
         analyzer.compose_video(is_component_selected=non_selected_components),
-        "non_selected.mp4",
+        "non_selected_auto.mp4",
     )
 
 
