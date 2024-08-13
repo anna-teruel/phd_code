@@ -11,6 +11,7 @@ from typing import List, Optional
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import skvideo.io  # type: ignore
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.ndimage import gaussian_filter  # type: ignore
 from sklearn.decomposition import PCA, FastICA  # type: ignore
@@ -154,11 +155,13 @@ class ComponentSelectorGUI(ComponentSelector):
         self.root.destroy()
 
 
+# TODO documentation
 class AutoSelector(ComponentSelector):
-
     def select_components(self, component_images: np.ndarray) -> List[bool]:
         component_images = abs(component_images)
-        component_images = cv2.normalize(component_images, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)  # type: ignore
+        component_images = cv2.normalize(
+            component_images, None, 0, 255, cv2.NORM_MINMAX
+        ).astype(np.uint8)  # type: ignore
         is_component_selected: list[bool] = []
         for image in component_images:
             is_component_selected.append(self.detectLines(image))
@@ -167,13 +170,11 @@ class AutoSelector(ComponentSelector):
 
     def detectLines(self, img: np.ndarray) -> bool:
         """Detect if an image contains lines, modify parameters if performance not optimal."""
-        ret, img = cv2.threshold(
-            img, np.quantile(img, 0.95), 255, cv2.THRESH_BINARY
-        )  # type: ignore
+        ret, img = cv2.threshold(img, np.quantile(img, 0.95), 255, cv2.THRESH_BINARY)  # type: ignore
         lines = cv2.HoughLinesP(
             img,
             rho=1,  # resolution of the parameter rho (1 pixel)
-            theta=math.pi / 2,  # resolution of the theta parameter (1 degree)
+            theta=math.pi / 2,  # resolution of the theta parameter (90 degree)
             threshold=200,
             lines=None,
             minLineLength=150,
@@ -687,7 +688,9 @@ class VideoData:
             ValueError: If the frames array is not 3-dimensional.
         """
         if np.ndim(frames) == 3:
-            frames = cv2.normalize(frames, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)  # type: ignore
+            frames = cv2.normalize(frames, None, 0, 255, cv2.NORM_MINMAX).astype(  # type: ignore
+                np.uint8
+            )
         else:
             raise Exception("Invalid dimensions for video when reshaping.")
 
@@ -704,6 +707,42 @@ class VideoData:
             out.write(frame)
 
         out.release()
+        print(f"Video saved as {output_path}")
+
+    def save_frames_lossless(
+        self, frames: np.ndarray, output_path: str = "output_video.mp4"
+    ) -> None:
+        """Save an array of frames as a video file. Depends on ffmpeg installed.
+
+        Args:
+            frames (np.ndarray): Array of video frames.
+            output_path (str): Path to save the output video.
+
+        Raises:
+            ValueError: If the frames array is not 3-dimensional.
+        """
+        if np.ndim(frames) == 3:
+            frames = cv2.normalize(frames, None, 0, 255, cv2.NORM_MINMAX).astype(  # type: ignore
+                np.uint8
+            )
+        else:
+            raise Exception("Invalid dimensions for video when reshaping.")
+
+        writer = skvideo.io.FFmpegWriter(
+            output_path,
+            outputdict={
+                "-r": f"{self.fps}",
+                "-vcodec": "libx264",  # use the h.264 codec
+                "-crf": "0",  # set the constant rate factor to 0, which is lossless
+                "-preset": "veryslow",  # the slower the better compression, in princple, try
+                # other options see https://trac.ffmpeg.org/wiki/Encode/H.264
+            },
+            inputdict={"-r": f"{self.fps}"},
+        )
+        for frame in frames:
+            writer.writeFrame(frame)  # write the frame as RGB not BGR
+
+        writer.close()  # close the writer
         print(f"Video saved as {output_path}")
 
 
@@ -856,6 +895,7 @@ class VideoAnalyzer:
             )
             n_components = self.pca.n_components_from_variance(variance_threshold)
             print(f"That would need {n_components} number of components.")
+            print("Keep in mind that it is not recommended more than 140")
             print("Do you want to get that many number of components?")
             chosen = ask_y_or_n()
 
@@ -969,7 +1009,7 @@ def load_is_component_selected_json(video_path: str, n_components: int) -> list[
                                             selected for the reconstruction or not.
     """
     with open(f"{video_path}_is_component_selected_{n_components}.json", "r") as f:
-        is_component_selected = json.load(f)
+        is_component_selected: list[bool] = json.load(f)
 
     return is_component_selected
 
@@ -1003,15 +1043,26 @@ def main(
     )
     save_is_component_selected_json(is_component_selected, video_path)
 
-    video.save_frames_as_mp4(
+    # Depends on ffmpeg installed on the system
+    # If not installed, use save_frames_as_mp4
+    video.save_frames_lossless(
         analyzer.compose_video(is_component_selected=is_component_selected), output_path
     )
+    # video.save_frames_as_mp4(
+    #     analyzer.compose_video(is_component_selected=is_component_selected), output_path
+    # )
 
     non_selected_components = [not selected for selected in is_component_selected]
-    video.save_frames_as_mp4(
+    # Depends on ffmpeg installed on the system
+    # If not installed, use save_frames_as_mp4
+    video.save_frames_lossless(
         analyzer.compose_video(is_component_selected=non_selected_components),
-        "non_selected_auto.mp4",
+        f"non_selected_{output_path}",
     )
+    # video.save_frames_as_mp4(
+    #     analyzer.compose_video(is_component_selected=non_selected_components),
+    #     f"non_selected_{output_path}",
+    # )
 
 
 if __name__ == "__main__":
