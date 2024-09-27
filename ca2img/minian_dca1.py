@@ -275,4 +275,138 @@ def initialize(Y_fm_chk,
     f = save_minian(f.rename("f"), intpath, overwrite=True)
     b = save_minian(b.rename("b"), intpath, overwrite=True)
 
+def check_nans_and_zeros(data, name):
+    has_nans = np.isnan(data).any().compute()
+    all_zeros = np.all(data == 0).compute()
+    print(f"Array {name} has NaNs: {has_nans}")
+    print(f"All values in array {name} are zeros: {all_zeros}")
 
+
+def run_cnmf(Y_hw_chk, 
+             Y_fm_chk, 
+             A, 
+             C, 
+             C_chk, 
+             param_get_noise, 
+             param_first_spatial, 
+             param_first_temporal, 
+             param_first_merge, 
+             param_second_spatial, 
+             param_second_temporal, 
+             intpath, 
+             chk, 
+             interactive=False):
+    """
+    This function performs the CNMF (Constrained Nonnegative Matrix Factorization) algorithm on the given data.
+    Minian uses CNMF with CVXPY as deconvolution backend. 
+    Args:
+        Y_hw_chk (xarray.DataArray): Input data in the form of a 3D array (height x width x time).
+        Y_fm_chk (xarray.DataArray): Input data in the form of a 3D array (frame x height x width).
+        A (xarray.DataArray): Initial spatial footprints of the identified components.
+        C (xarray.DataArray): Initial temporal components.
+        C_chk (xarray.DataArray): Checkpoint for temporal components.
+        param_get_noise (dict): Parameters for the noise estimation function.
+        param_first_spatial (dict): Parameters for the first spatial update function.
+        param_first_temporal (dict): Parameters for the first temporal update function.
+        param_first_merge (dict): Parameters for the first merge function.
+        param_second_spatial (dict): Parameters for the second spatial update function.
+        param_second_temporal (dict): Parameters for the second temporal update function.
+        intpath (str): Path to the directory where intermediate results will be saved.
+        chk (dict): Dictionary containing chunking information for the data.
+        interactive (bool, optional): If True, interactive plots will be displayed during the process. Defaults to False.
+    Returns:
+        tuple: Returns a tuple containing updated spatial footprints (A), temporal components (C), checkpoint for temporal components (C_chk), background spatial component (b), background temporal component (f), spike trains (S), baseline fluorescence for each neuron (b0), initial concentration for each neuron (c0), and noise level for each pixel (sig).
+    """     
+    print(f'Processing directory: {intpath}')
+    # 1. Estimate spatial noise
+    print("Estimate spatial noise")
+    sn_spatial = get_noise_fft(Y_hw_chk, **param_get_noise)
+    check_nans_and_zeros(sn_spatial, "sn_spatial")
+    sn_spatial = save_minian(sn_spatial.rename("sn_spatial"), intpath, overwrite=True)
+    # 2. First spatial update
+    A_new, mask, norm_fac = update_spatial(Y_hw_chk, A, C, sn_spatial, **param_first_spatial)
+    check_nans_and_zeros(A_new, "A_new")
+    C_new = save_minian((C.sel(unit_id=mask) * norm_fac).rename("C_new"), intpath, overwrite=True)
+    C_chk_new = save_minian((C_chk.sel(unit_id=mask) * norm_fac).rename("C_chk_new"), intpath, overwrite=True)
+    check_nans_and_zeros(C_new, "C_new")
+    check_nans_and_zeros(C_chk_new, "C_chk_new")
+    b_new, f_new = update_background(Y_fm_chk, A_new, C_chk_new)
+    print("Saving results from spatial update")
+    A = save_minian(A_new.rename("A"), intpath, overwrite=True, chunks={"unit_id": 1, "height": -1, "width": -1})
+    b = save_minian(b_new.rename("b"), intpath, overwrite=True)
+    f = save_minian(f_new.chunk({"frame": chk["frame"]}).rename("f"), intpath, overwrite=True)
+    C = save_minian(C_new.rename("C"), intpath, overwrite=True)
+    C_chk = save_minian(C_chk_new.rename("C_chk"), intpath, overwrite=True)
+    
+    check_nans_and_zeros(A, "A")
+    check_nans_and_zeros(C, "C")
+    check_nans_and_zeros(b, "b")
+    check_nans_and_zeros(f, "f")
+    check_nans_and_zeros(C_chk, "C_chk")
+    
+    # 3. First temporal update
+    print("First temporal update")
+    YrA = save_minian(compute_trace(Y_fm_chk, A, b, C_chk, f).rename("YrA"), intpath, overwrite=True, chunks={"unit_id": 1, "frame": -1})
+    C_new, S_new, b0_new, c0_new, g, mask = update_temporal(A, C, YrA=YrA, **param_first_temporal)
+    
+    C = save_minian(C_new.rename("C").chunk({"unit_id": 1, "frame": -1}), intpath, overwrite=True)
+    C_chk = save_minian(
+        C.rename("C_chk"),
+        intpath,
+        overwrite=True,
+        chunks={"unit_id": -1, "frame": chk["frame"]})
+    S = save_minian(S_new.rename("S").chunk({"unit_id": 1, "frame": -1}), intpath, overwrite=True)
+    b0 = save_minian(b0_new.rename("b0").chunk({"unit_id": 1, "frame": -1}), intpath, overwrite=True)
+    c0 = save_minian(c0_new.rename("c0").chunk({"unit_id": 1, "frame": -1}), intpath, overwrite=True)
+    A = A.sel(unit_id=C.coords["unit_id"].values)
+    check_nans_and_zeros(A, "A")
+    check_nans_and_zeros(C, "C")
+    check_nans_and_zeros(S, "S")
+    check_nans_and_zeros(b0, "b0")
+    check_nans_and_zeros(c0, "c0")
+    check_nans_and_zeros(C_chk, "C_chk")
+    # Merge units 
+    try: 
+        A_mrg, C_mrg, [sig_mrg] = unit_merge(A, C, [C + b0 + c0], **param_first_merge)
+    except Exception as e:
+        print(f"Failed to merge units due to error: {e}")
+        A_mrg = A 
+        C_mrg = C
+    finally:
+        A = save_minian(A_mrg.rename("A_mrg"), intpath, overwrite=True)
+        C = save_minian(C_mrg.rename("C_mrg"), intpath, overwrite=True)
+        C_chk = save_minian(C.rename("C_mrg_chk"), intpath, overwrite=True, chunks={"unit_id": -1, "frame": chk["frame"]})
+        check_nans_and_zeros(A, "A")
+        check_nans_and_zeros(C, "C")
+        check_nans_and_zeros(C_chk, "C_chk")
+    # 4, Second spatial update
+    A_new, mask, norm_fac = update_spatial(Y_hw_chk, A, C, sn_spatial, **param_second_spatial)
+    C_new = save_minian((C.sel(unit_id=mask) * norm_fac).rename("C_new"), intpath, overwrite=True)
+    C_chk_new = save_minian((C_chk.sel(unit_id=mask) * norm_fac).rename("C_chk_new"), intpath, overwrite=True)
+    b_new, f_new = update_background(Y_fm_chk, A_new, C_chk_new)
+    A = save_minian(A_new.rename("A"), intpath, overwrite=True, chunks={"unit_id": 1, "height": -1, "width": -1})
+    b = save_minian(b_new.rename("b"), intpath, overwrite=True)
+    f = save_minian(f_new.chunk({"frame": chk["frame"]}).rename("f"), intpath, overwrite=True)
+    C = save_minian(C_new.rename("C"), intpath, overwrite=True)
+    C_chk = save_minian(C_chk_new.rename("C_chk"), intpath, overwrite=True)
+    check_nans_and_zeros(A, "A")
+    check_nans_and_zeros(C, "C")
+    check_nans_and_zeros(b, "b")
+    check_nans_and_zeros(f, "f")
+    check_nans_and_zeros(C_chk, "C_chk")
+    # 5. Second temporal update
+    YrA = save_minian(compute_trace(Y_fm_chk, A, b, C_chk, f).rename("YrA"), intpath, overwrite=True, chunks={"unit_id": 1, "frame": -1})
+    C_new, S_new, b0_new, c0_new, g, mask = update_temporal(A, C, YrA=YrA, **param_second_temporal)
+    C = save_minian(C_new.rename("C").chunk({"unit_id": 1, "frame": -1}), intpath, overwrite=True)
+    C_chk = save_minian(C.rename("C_chk"), intpath, overwrite=True, chunks={"unit_id": -1, "frame": chk["frame"]})
+    S = save_minian(S_new.rename("S").chunk({"unit_id": 1, "frame": -1}), intpath, overwrite=True)
+    b0 = save_minian(b0_new.rename("b0").chunk({"unit_id": 1, "frame": -1}), intpath, overwrite=True)
+    c0 = save_minian(c0_new.rename("c0").chunk({"unit_id": 1, "frame": -1}), intpath, overwrite=True)
+    A = A.sel(unit_id=C.coords["unit_id"].values)
+    check_nans_and_zeros(A, "A")
+    check_nans_and_zeros(C, "C")
+    check_nans_and_zeros(S, "S")
+    check_nans_and_zeros(b0, "b0")
+    check_nans_and_zeros(c0, "c0")
+    check_nans_and_zeros(C_chk, "C_chk")
+    return A, C, C_chk, b, f, S, b0, c0
