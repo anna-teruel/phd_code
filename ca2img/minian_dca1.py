@@ -43,7 +43,7 @@ from minian.initialization import (
 )
 from minian.motion_correction import apply_transform, estimate_motion
 from minian.preprocessing import denoise, remove_background
-from minian.preprocessing import glow_removal, remove_background
+from minian.preprocessing import remove_background
 from minian.utilities import (
     TaskAnnotation,
     get_optimal_chk,
@@ -128,7 +128,8 @@ def preprocessing(intpath, dpath,
     chk, _ = get_optimal_chk(video_data, dtype=float)
     
     # Glow removal
-    video_data = glow_removal(video_data)
+    varr_min = video_data.min("frame").compute()
+    video_data = video_data - varr_min
     
     # Denoise
     video_data = denoise(video_data, **param_denoise)
@@ -273,3 +274,5 @@ def initialize(Y_fm_chk,
     b, f = update_background(Y_fm_chk, A, C_chk)
     f = save_minian(f.rename("f"), intpath, overwrite=True)
     b = save_minian(b.rename("b"), intpath, overwrite=True)
+
+
