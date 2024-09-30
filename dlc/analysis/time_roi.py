@@ -451,4 +451,4 @@ class TimeinRoi:
                         print(f"No corresponding ROI data for {filename}. Skipping...")
                 except Exception as e:
                     print(f"Error processing file {filename}: {e}")
-        return pd.DataFrame(results)
+        return pd.DataFrame(results) 
