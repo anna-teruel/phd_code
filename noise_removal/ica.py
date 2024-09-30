@@ -595,8 +595,7 @@ class GaussianSpatialFilter(Preprocessor):
             np.ndarray: Filtered frames.
         """
         print("Applying the spatial gaussian mean filter to each frame.")
-        return gaussian_filter(data, sigma=self.sigma, axes=(1, 2))
-
+        return np.array([gaussian_filter(frame, sigma=self.sigma) for frame in data])
 
 class VideoData:
     """Class to handle loading and saving of video data."""
