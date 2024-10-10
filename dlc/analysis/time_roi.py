@@ -524,6 +524,8 @@ class DynamicROI:
     
 
 class TimeROIbins:
+    #TODO (Anna) make sure roi parameters needed are well read both for dynamic and static
+
     def __init__(self, df, bodypart, roi_type, roi_params):
         """
         Initialize the TimeROIBINS object.

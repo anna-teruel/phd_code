@@ -6,7 +6,7 @@ Plotting module for visualizing animal tracking data.
 import numpy as np
 from matplotlib.collections import LineCollection
 import matplotlib.pyplot as plt
-import seaborn as sns
+import seaborn as sns # type: ignore
 import pandas as pd
 from pathlib import Path
 import os
