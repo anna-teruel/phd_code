@@ -140,7 +140,7 @@ class Centroid:
         df.loc[:, (DLCscorer, "centroid", "y")] = centroid_y
         return df
 
-    def get_centroid(self, input_data, bodyparts, save = False):
+    def get_centroid(self, input_data, bodyparts, save = False, suffix = 'filtered.h5'):
         """
         Get centroid for single or multiple DataFrames.
 
@@ -148,13 +148,13 @@ class Centroid:
             input_data (str): Path to .h5 file/s.
             bodyparts (list): List of bodyparts for centroid calculation.
             save (bool): if you want to save the DataFrame(s) to h5 files. Default False
+            suffix (str): suffix of the files to read. Default 'filtered.h5'
 
         Returns:
             dict or pd.DataFrame: Dictionary with centroids or single DataFrame with centroid.
         """
-        loader = DataLoader()  # No need to pass minutes or fps here
+        loader = DataLoader()  
         if os.path.isfile(input_data):
-            # Read the single file
             df = loader.read_data(input_data)
             return self.calculate_centroid(df, bodyparts)
             if save:
@@ -162,8 +162,7 @@ class Centroid:
 
             return df
         elif os.path.isdir(input_data):
-            # Read all files in the directory
-            data_dict = loader.read_directory(input_data)
+            data_dict = loader.read_directory(input_data, suffix = suffix)
             return {
                 key: self.calculate_centroid(df, bodyparts)
                 for key, df in data_dict.items()

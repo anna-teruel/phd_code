@@ -74,15 +74,16 @@ class DataLoader:
         return data_dict
     
     def get_file_name(self, file_path): 
-        """_summary_
+        """
+        Extract the base file name from the given file path, removing extra information.
 
         Args:
             file_path (str): The path to the .h5 file.
 
         Returns:
-            _type_: _description_
+            str: The cleaned file name without extra information.
         """        
-        file_name_long = Path(file_path).name  # complete file name with extension
+        file_name_long = Path(file_path).name  
         dlc_index = file_name_long.find(
             "DLC"
         )  # all deeplabcut files include project info starts with "DLC"

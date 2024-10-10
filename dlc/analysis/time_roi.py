@@ -4,14 +4,14 @@ using the Napari library, determining if a point is within a given ROI, and calc
 each ROI. It also includes functionality for saving the ROI data and the annotated frame to a specified directory.
 @author Anna Teruel-Sanchis, 2023
 """
-import napari
+import napari  # type: ignore
 import cv2
 import os
 import numpy as np
 import pandas as pd
 from abc import ABC, abstractmethod
 from qtpy.QtWidgets import QPushButton, QVBoxLayout, QWidget
-from shapely.geometry import Point, Polygon, box
+from shapely.geometry import Point, Polygon, box # type: ignore
 import pickle
 import datetime
 
@@ -381,16 +381,22 @@ class TimeinRoi:
         y_coords = df[(scorer, body_part, 'y')]
         return list(zip(x_coords, y_coords))
             
-    def time_in_rois(self, tracking_data):
+    def time_in_rois(self, tracking_data, minutes=None):
         """
         Calculates the time spent in each ROI based on the tracking data.
 
         Args:
             tracking_data (list of tuples): A list of (x, y) coordinates representing tracking data.
+            minutes (float, optional): Number of minutes to compute the time in ROIs. If None, use the entire tracking data.
 
         Returns:
             List of int: A list where each element represents the time spent in the corresponding ROI.
-        """        
+        """
+        if minutes is not None:
+            num_frames = int(minutes * 60 * self.fps)
+            tracking_data = tracking_data[:num_frames]
+            print(f"Calculating time in ROIs for the first {minutes} minutes ({num_frames} frames).")
+        
         time_in_rois = [0] * len(self.rois)
         for point in tracking_data:
             for i, roi in enumerate(self.rois):
@@ -403,7 +409,9 @@ class TimeinRoi:
         else:
             return time_in_rois
     
-    def time_in_rois_dir(self, directory, rois, scorer, body_part, file_endswith='filtered.h5', filename_replace = None):
+    def time_in_rois_dir(self, directory, rois, scorer, body_part, 
+                         file_endswith='filtered.h5', filename_replace = None, 
+                         minutes = None):
         """
         Processes a directory of DeepLabCut HDF5 files to calculate the time spent in each ROI for a specified body part.
         
@@ -415,8 +423,9 @@ class TimeinRoi:
             rois (dict): A dictionary mapping file base names to lists of ROI objects.
             scorer (str): The scorer name as per the HDF5 file's structure.
             body_part (str): The body part to track (e.g., 'nose').
-            file_endswith (str):
-            filename_replace (str):  
+            file_endswith (str): The file suffix to filter files in the directory.
+            filename_replace (str): The string to replace in the filename to get the base name.
+            minutes (float, optional): Number of minutes to compute the time in ROIs. If None, use the entire tracking data.
 
         Returns:
             pd.DataFrame: A DataFrame with columns for file name, ROI index, and time spent in each ROI.
@@ -439,7 +448,11 @@ class TimeinRoi:
 
                         file_path = os.path.join(directory, filename)
                         tracking_data = self.extract_tracking_data(file_path, scorer, body_part)
-                        time_in_rois = self.time_in_rois(tracking_data)
+                        if minutes is not None:
+                            num_frames = int(minutes * 60 * self.fps)
+                            tracking_data = tracking_data[:num_frames]
+                            print(f"Processing {filename} for the first {minutes} minutes ({num_frames} frames).")
+                        time_in_rois = self.time_in_rois(tracking_data, minutes)
 
                         for i, time_in_roi in enumerate(time_in_rois):
                             results.append({
@@ -452,3 +465,115 @@ class TimeinRoi:
                 except Exception as e:
                     print(f"Error processing file {filename}: {e}")
         return pd.DataFrame(results) 
+    
+class DynamicROI:
+    def __init__(self, bodypart='centroid', c='lc', r='lr'):
+        """
+        Initialize the DynamicROI object.
+        We use dynamic rois when animals move objects in the arena, so it does not have a fixed position. 
+        This functions assumes you are tracking those objects. 
+
+        Args:
+            bodypart (str): The body part to compute the distance to the centroid.
+            c (str): The name of the body part used as the centroid (e.g., 'lc').
+            r (str): The name of the body part used to calculate the radius (e.g., 'lr').
+        """
+        self.bodypart = bodypart
+        self.c = c
+        self.r = r
+
+    def get_radius(self, r_x, r_y, c_x, c_y):
+        """
+        Compute the dynamic radius based on the centroid and rad points.
+        This function b computes the distance between two points: centroid and rad point.
+        """
+        return np.sqrt((c_x - r_x)**2 + (c_y - r_y)**2)
+
+    def dynamic_time_in_roi(self, df, fps, minutes=None):
+        """
+        Compute the time spent in the ROI for each frame using dynamically calculated radii.
+
+        Args:
+            df (pd.DataFrame): DataFrame containing the x, y coordinates.
+            fps (float): Frames per second of the video.
+            minutes (float, optional): Number of minutes to compute the time in ROI
+                If None, use the entire DataFrame.
+
+        Returns:
+            float: Total time spent in the ROI.
+        """
+        if minutes is not None:
+            num_frames = int(minutes * 60 * fps)
+            df = df.iloc[:num_frames]
+            print(f"Calculating dynamic time in ROI for the first {minutes} minutes ({num_frames} frames).")
+        
+        c_x = df.loc[:, (slice(None), self.c, 'x')].values
+        c_y = df.loc[:, (slice(None), self.c, 'y')].values
+        r_x = df.loc[:, (slice(None), self.r, 'x')].values
+        r_y = df.loc[:, (slice(None), self.r, 'y')].values
+
+        radii = self.get_radius(r_x, r_y, c_x, c_y)
+
+        x = df.loc[:, (slice(None), self.bodypart, 'x')].values
+        y = df.loc[:, (slice(None), self.bodypart, 'y')].values
+        distances = np.sqrt((x - c_x)**2 + (y - c_y)**2)
+        in_roi = distances <= radii
+
+        time_in_roi = np.sum(in_roi) / fps
+        return time_in_roi
+    
+
+class TimeROIbins:
+    def __init__(self, df, bodypart, roi_type, roi_params):
+        """
+        Initialize the TimeROIBINS object.
+
+        Args:
+            df (pd.DataFrame): DataFrame containing the tracking data.
+            bodypart (str): The body part to analyze (e.g., 'nose').
+            roi_type (str): Type of ROI ('static' or 'dynamic').
+            roi_params (dict): Parameters for the ROI.
+        """
+        self.df = df
+        self.bodypart = bodypart
+        self.roi_type = roi_type
+        self.roi_params = roi_params
+
+        if roi_type == 'static':
+            self.roi_calculator = TimeinRoi(df, bodypart, roi_params['roi'])
+        elif roi_type == 'dynamic':
+            self.roi_calculator = DynamicROI(df, bodypart, roi_params['c'], roi_params['r'])
+        else:
+            raise ValueError("Invalid ROI type. Must be 'static' or 'dynamic'.")
+        
+    def calculate_time_in_roi_bins(self, fps, bin_size_sec):
+        """
+        Compute the time spent in the ROI for each bin of time.
+
+        Args:
+            fps (float): Frames per second of the video.
+            bin_size_sec (float): Size of each bin in seconds.
+
+        Returns:
+            pd.DataFrame: DataFrame with time spent in ROI for each bin.
+        """
+        bin_size_frames = int(bin_size_sec * fps)
+        num_bins = int(np.ceil(len(self.df) / bin_size_frames))
+
+        results = []
+        for i in range(num_bins):
+            start_frame = i * bin_size_frames
+            end_frame = min((i + 1) * bin_size_frames, len(self.df))
+            df_bin = self.df.iloc[start_frame:end_frame]
+            if self.roi_type == 'static':
+                time_in_roi = self.roi_calculator.time_in_rois(fps, minutes=None)
+            else:
+                time_in_roi = self.roi_calculator.dynamic_time_in_roi(fps, minutes=None)
+            results.append({
+                'bin': i + 1,
+                'start_frame': start_frame,
+                'end_frame': end_frame,
+                'time_in_roi': time_in_roi
+            })
+
+        return pd.DataFrame(results)

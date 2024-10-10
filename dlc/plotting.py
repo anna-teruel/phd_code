@@ -59,6 +59,7 @@ class InterpolationPlot:
         x = data["x"].values
         y = data["y"].values
         likelihood = data["likelihood"].values
+        likelihood = np.clip(likelihood, 0, None)
 
         points = np.array([x, y]).T.reshape(-1, 1, 2)
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
