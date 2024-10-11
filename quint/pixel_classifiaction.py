@@ -5,10 +5,10 @@ for all images organized in different subdirectories.
 """
 
 import imageio
-import h5py
+import h5py # type: ignore
 import os
 from pathlib import Path
-from ilastik.experimental.api import PixelClassificationPipeline
+from ilastik.experimental.api import PixelClassificationPipeline # type: ignore
 from xarray import DataArray
 
 def batch_probabilities(dir, project):

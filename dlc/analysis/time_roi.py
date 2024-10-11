@@ -542,7 +542,7 @@ class TimeROIbins:
         self.roi_params = roi_params
 
         if roi_type == 'static':
-            self.roi_calculator = TimeinRoi(df, bodypart, roi_params['roi'])
+            self.roi_calculator = TimeinRoi(df, roi_params['roi'])
         elif roi_type == 'dynamic':
             self.roi_calculator = DynamicROI(df, bodypart, roi_params['c'], roi_params['r'])
         else:
