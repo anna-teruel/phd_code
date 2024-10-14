@@ -42,6 +42,7 @@ class Interpolation:
         """
         self.threshold = threshold
         self.interpolation_method = interpolation_method
+        self.loader = DataLoader()
 
     def get_interpolation(self, df, bodyparts):
         """
@@ -58,9 +59,7 @@ class Interpolation:
         for bp in bodyparts:
             if bp in df.columns.get_level_values("bodyparts").unique():
                 mask = df.loc[:, (scorer, bp, "likelihood")] < self.threshold
-                print(f"Interpolating {mask.sum()} points for {bp}.")
 
-                # before interpolation, we need to fill with NaNs.
                 df.loc[mask, (scorer, bp, "x")] = np.nan
                 df.loc[mask, (scorer, bp, "y")] = np.nan
                 df.loc[mask, (scorer, bp, "likelihood")] = np.nan
@@ -74,40 +73,41 @@ class Interpolation:
                 df.loc[:, (scorer, bp, "likelihood")] = df[
                     (scorer, bp, "likelihood")
                 ].interpolate(method=self.interpolation_method)
-                print(
-                    f"NaNs after interpolation for {bp} x: {df[(scorer, bp, 'x')].isna().sum()}"
-                )
-                print(
-                    f"NaNs after interpolation for {bp} y: {df[(scorer, bp, 'y')].isna().sum()}"
-                )
-
             else:
                 print(f"{bp} bodypart is not found in the DataFrame.")
         return df
 
-    def interpolate_data(self, input_data, bodyparts):
+    def interpolate_data(self, input_data: str, bodyparts: list, output_dir: str = None):
         """
         Interpolate data for either a single DataFrame or a dictionary of DataFrames.
 
         Args:
             input_data (str): Path to .h5 file/s.
             bodyparts (list): List of bodyparts for interpolation.
+            output_dir (str, optional): Path to save the interpolated DataFrame/s. Defaults to None.
 
         Returns:
             pd.DataFrame or dict: Interpolated DataFrame or dictionary of DataFrames.
         """
-        loader = DataLoader()  # No need to pass minutes or fps here
-        if os.path.isfile(input_data):
-            # Read the single file
-            df = loader.read_data(input_data)
-            return self.get_interpolation(df, bodyparts)
-        elif os.path.isdir(input_data):
-            # Read all files in the directory
+        loader = DataLoader() 
+        if os.path.isfile(input_data): # Read the single file
+            df = loader.read_data(input_data) 
+            interpolated_df = self.get_interpolation(df, bodyparts)
+            out_path = os.path.join(output_dir, 'interpolated.h5')
+            interpolated_df.to_hdf(out_path, key='df', mode='w')
+            print(f"Interpolated data saved to {output_path}")
+            return interpolated_df
+        elif os.path.isdir(input_data): # Read all files in the directory
             data_dict = loader.read_directory(input_data)
-            return {
+            interpolated_data_dict = {
                 key: self.get_interpolation(df, bodyparts)
                 for key, df in data_dict.items()
             }
+            for filename, df in interpolated_data_dict.items():
+                output_path = os.path.join(output_dir, filename)
+                df.to_hdf(output_path, key='df', mode='w')
+            print(f"Interpolated data saved to {output_dir}")
+            return interpolated_data_dict
         else:
             raise ValueError("Provided path does not exist.")
 

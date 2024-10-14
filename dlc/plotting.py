@@ -17,197 +17,131 @@ from dlc.load_data import DataLoader
 
 
 class InterpolationPlot:
-    def __init__(self, style="light", colormap="RdYlGn", linewidth=0.5, alpha=1):
+    def __init__(self, interpolator, style="light", colormap="RdYlGn", linewidth=0.5, alpha=1):
         """
-        Initialize an InterpolationPlot object for visualizing animal tracking data.
+        Initialize an InterpolationPlot object with specified parameters.
 
         Args:
-            style (str, optional): Specifies the plot style ('light' or 'dark'). Defaults to 'light'.
-            colormap (matplotlib.colors.Colormap, optional): Colormap to be used for plotting. Defaults to plt.cm.RdYlGn.
-            linewidth (float, optional): Width of the plot lines. Defaults to 0.5.
-            alpha (float, optional): Transparency level of the plot lines. Defaults to 0.5.
+            interpolator (Interpolation): An instance of the Interpolation class.
+            style (str, optional): Plotting style, either 'light' or 'dark'. Defaults to 'light'.
+            colormap (str, optional): Colormap to use for the scatter plot. Defaults to 'RdYlGn'.
+            linewidth (float, optional): Line width for the scatter plot. Defaults to 0.5.
+            alpha (float, optional): Alpha value for the scatter plot. Defaults to 1.
         """
+        self.interpolator = interpolator
         self.style = style
         if style == "dark":
             plt.style.use("dark_background")
         elif style == "light":
             plt.style.use("default")
 
-        self.interpolator = Interpolation()
         self.colormap = plt.get_cmap(colormap)
         self.linewidth = linewidth
         self.alpha = alpha
 
     def interpolation_plot(self, ax, data, title, cbar=True):
         """
-        Plot data on a given axes object with specified style, colormap, linewidth, and alpha.
-
-        This function plots data on the provided axes with customizable styling parameters. It creates a line
-        plot connecting points in the 'x' and 'y' columns of the DataFrame. The color and transparency of the
-        lines are determined by the 'likelihood' column of the DataFrame. A colorbar is added to the plot to
-        indicate the likelihood values.
+        Create a line plot for the given data.
 
         Args:
-            ax (matplotlib.axes.Axes): Matplotlib axes object to plot on.
-            data (pandas.DataFrame): DataFrame containing 'x', 'y', and 'likelihood' values.
+            ax (matplotlib.axes.Axes): The axes on which to plot.
+            data (pd.DataFrame): DataFrame containing 'x', 'y', and 'likelihood' columns.
             title (str): Title of the plot.
-            cbar (bool, optional): Whether to include a colorbar in the plot. Defaults to True.
-
-        Returns:
-            matplotlib.collections.LineCollection: The LineCollection object representing the plotted data.
+            cbar (bool, optional): Whether to include a colorbar. Defaults to True.
         """
-        x = data["x"].values
-        y = data["y"].values
-        likelihood = data["likelihood"].values
-        likelihood = np.clip(likelihood, 0, None)
-
-        points = np.array([x, y]).T.reshape(-1, 1, 2)
+        points = data[['x', 'y']].values.reshape(-1, 1, 2)
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
-
-        norm = plt.Normalize(likelihood.min(), likelihood.max())
-
-        lc = LineCollection(
-            segments,
-            cmap=self.colormap,
-            norm=norm,
-            array=likelihood,
-            linewidth=self.linewidth,
-            alpha=self.alpha,
-        )
-        lc.set_array(likelihood)
-
+        lc = LineCollection(segments, cmap=self.colormap, linewidth=self.linewidth, alpha=self.alpha)
+        lc.set_array(data['likelihood'])
         ax.add_collection(lc)
-        ax.autoscale()
-
-        # Adding colorbar
+        ax.set_title(title)
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.autoscale()  # Automatically scale the axis to fit the data
         if cbar:
-            cbar = plt.colorbar(lc, ax=ax)
-            cbar.set_label("Likelihood")
+            plt.colorbar(lc, ax=ax, label='Likelihood')
 
-        return lc
-
-    def plot_comparison(self, axes, raw_data, int_data, bodypart, title):
+    def plot_comparison(self, raw_data, int_data, bodypart, axes):
         """
-        Compares data before and after interpolation in side-by-side plots.
+        Plot a comparison of raw and interpolated data for a specific body part.
 
         Args:
-            axes (list of matplotlib.axes.Axes): List of two axes for plotting before and after data.
-            raw_data (pandas.DataFrame): Raw data DataFrame before interpolation.
-            int_data (pandas.DataFrame): DataFrame after interpolation.
-            bodypart (str): Name of the body part being plotted.
-            title (str): Title of the plot.
+            raw_data (pd.DataFrame): Raw data DataFrame.
+            int_data (pd.DataFrame): Interpolated data DataFrame.
+            bodypart (str): The body part to plot.
+            axes (list of matplotlib.axes.Axes): List of axes for plotting.
         """
         bp_raw_data = pd.DataFrame(
             {
                 "x": raw_data.loc[:, (slice(None), bodypart, "x")].values.flatten(),
                 "y": raw_data.loc[:, (slice(None), bodypart, "y")].values.flatten(),
-                "likelihood": raw_data.loc[
-                    :, (slice(None), bodypart, "likelihood")
-                ].values.flatten(),
+                "likelihood": raw_data.loc[:, (slice(None), bodypart, "likelihood")].values.flatten(),
             }
         )
-        self.interpolation_plot(axes[0], bp_raw_data, "Before Interpolation")
+        self.interpolation_plot(axes[0], bp_raw_data, f"Before Interpolation - {bodypart}")
 
         bp_int_data = pd.DataFrame(
             {
                 "x": int_data.loc[:, (slice(None), bodypart, "x")].values.flatten(),
                 "y": int_data.loc[:, (slice(None), bodypart, "y")].values.flatten(),
-                "likelihood": int_data.loc[
-                    :, (slice(None), bodypart, "likelihood")
-                ].values.flatten(),
+                "likelihood": int_data.loc[:, (slice(None), bodypart, "likelihood")].values.flatten(),
             }
         )
-        self.interpolation_plot(axes[1], bp_int_data, "After Interpolation")
+        self.interpolation_plot(axes[1], bp_int_data, f"After Interpolation - {bodypart}")
 
-    def plot_bodyparts(self, file_path, bodyparts, title):
-        """Furth
-        Plot data for multiple body parts from a single file.
-
-        This function reads data from a single file specified by 'file_path' and plots the trajectories of
-        multiple body parts over time. The 'bodyparts' argument should be a list of body part names to be
-        included in the plot. Each body part will be plotted in a separate subplot.
+    def plot_bodyparts(self, raw_data, int_data, bodyparts, title, output_dir):
+        """
+        Plot comparisons for multiple body parts and save the figure.
 
         Args:
-            file_path (str): Path to the .h5 file containing the data.
-            bodyparts (list of str): List of body parts to include in the plot.
-            title (str): Base title for the plots, each subplot will have this title followed by the body part name.
+            raw_data (pd.DataFrame): Raw data DataFrame.
+            int_data (pd.DataFrame): Interpolated data DataFrame.
+            bodyparts (list): List of body parts to plot.
+            title (str): Title of the figure.
+            output_dir (str): Directory to save the figure.
         """
-        loader = DataLoader(file_path)
-        raw_data = loader.read_data(file_path)  # data before inteprolation
-        int_data = self.interpolator.interpolate_data(
-            file_path, bodyparts
-        )  # data after interpolation
-
         num_bodyparts = len(bodyparts)
-        fig, all_axes = plt.subplots(
-            num_bodyparts, 2, figsize=(10, 5 * num_bodyparts)
-        )  # 2 columns for before and after
+        fig, all_axes = plt.subplots(num_bodyparts, 2, figsize=(10, 5 * num_bodyparts))  # 2 columns for before and after
         fig.suptitle(title)
 
-        if num_bodyparts == 1:  # If there's only one body part, we make sure all_axes is a 2D array
-            all_axes = [all_axes]
+        for i, bodypart in enumerate(bodyparts):
+            self.plot_comparison(raw_data, int_data, bodypart, all_axes[i])
 
-        for i, bp in enumerate(bodyparts):
-            axes = all_axes[i]  # This is a pair of axes (one row for each body part)
-            # Now pass the correct number of arguments to plot_comparison
-            self.plot_comparison(axes, raw_data, int_data, bp, title)
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        output_path = os.path.join(output_dir, f"{title}.png")
+        plt.savefig(output_path)
+        plt.close(fig)
+        print(f"Figure saved to {output_path}")
 
-            axes[0].set_title(f"{bp} - Before")
-            axes[1].set_title(f"{bp} - After")
-
-        plt.tight_layout(
-            rect=[0, 0.03, 1, 0.95]
-        )  # Adjust layout to make room for suptitle
-
-    def plot_file(
-        self,
-        file_path,
-        bodyparts,
-        title,
-        save=False,
-        save_directory=".",
-        save_filename="plot.png",
-    ):
+    def plot_file(self, file_path, bodyparts, title, output_dir):
         """
-        Creates a figure with subplots for each body part from a single file.
+        Plot comparisons for a single file and save the figure.
 
         Args:
-            file_path (str): Path to the .h5 file.
-            bodyparts (list of str): Body parts to include in the plot.
-            title (str): Base title for the plots, each subplot will have this title followed by the body part name.
-            save (bool, optional): If True, save the plot to the specified directory. If False, display the plot. Defaults to False.
-            save_directory (str, optional): Directory where the plot should be saved if 'save' is True. Defaults to '.'.
-            save_filename (str, optional): Filename for the saved plot if 'save' is True. Defaults to 'plot.png'.
+            file_path (str): Path to the file.
+            bodyparts (list): List of body parts to plot.
+            title (str): Title of the figure.
+            output_dir (str): Directory to save the figure.
         """
-        name = self.data_loader.get_file_name(file_path)
-        full_title = f"{title} - {name}"
+        raw_data = self.interpolator.loader.read_data(file_path)  # Use the loader from the interpolator
+        int_data = self.interpolator.get_interpolation(raw_data, bodyparts)  # Interpolate the data
+        self.plot_bodyparts(raw_data, int_data, bodyparts, title, output_dir)
 
-        title_plot = f"{title} - {full_title}"
-        
-        self.plot_bodyparts(file_path, bodyparts, title_plot)
-
-        if save:
-            save_path = Path(save_directory) / save_filename
-            Path(save_directory).mkdir(parents=True, exist_ok=True)
-            plt.savefig(save_path)
-        else:
-            plt.show()
-
-    def plot_directory(self, directory_path, bodyparts, title):
+    def plot_directory(self, directory_path, bodyparts, title, output_dir):
         """
-        Creates figures with subplots for each body part from all .h5 files in a directory.
+        Plot comparisons for all files in a directory and save the figures.
 
         Args:
-            directory_path (str): Path to the directory containing .h5 files.
-            bodyparts (list of str): Body parts to include in the plot.
-            title (str): Base title for the plots, each subplot will have this title followed by the body part name.
+            directory_path (str): Path to the directory.
+            bodyparts (list): List of body parts to plot.
+            title (str): Title of the figure.
+            output_dir (str): Directory to save the figures.
         """
-        directory = Path(directory_path)
-        h5_files = list(directory.glob("*filtered.h5"))  # Adjust pattern if needed
-
-        for file_path in h5_files:
-            self.plot_file(str(file_path), bodyparts, title.format(file_path.stem))
-
+        data_dict = self.interpolator.loader.read_directory(directory_path)  # Use the loader from the interpolator
+        for filename, raw_data in data_dict.items():
+            print(f"Processing file: {filename}")
+            int_data = self.interpolator.get_interpolation(raw_data, bodyparts)
+            self.plot_bodyparts(raw_data, int_data, bodyparts, f"{title} - {filename}", output_dir)
 
 class TrackingPlot:
     def __init__(self, style="light"):
