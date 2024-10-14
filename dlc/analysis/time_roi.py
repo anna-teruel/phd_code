@@ -171,7 +171,7 @@ def extract_roi_data(df, shape_type, roi_callback):
             parameters[f"{shape_type}{index}"] = param['params']
     return rois, parameters
 
-def get_fps(video_path):
+
     video = cv2.VideoCapture(video_path)
     fps = video.get(cv2.CAP_PROP_FPS)
     video.release()
@@ -467,7 +467,7 @@ class TimeinRoi:
         return pd.DataFrame(results) 
     
 class DynamicROI:
-    def __init__(self, bodypart='centroid', c='lc', r='lr'):
+    def __init__(self, c, r, video_dir, bodypart='centroid'):
         """
         Initialize the DynamicROI object.
         We use dynamic rois when animals move objects in the arena, so it does not have a fixed position. 
@@ -477,31 +477,71 @@ class DynamicROI:
             bodypart (str): The body part to compute the distance to the centroid.
             c (str): The name of the body part used as the centroid (e.g., 'lc').
             r (str): The name of the body part used to calculate the radius (e.g., 'lr').
+            video_dir (str): The directory containing the video files.
         """
         self.bodypart = bodypart
         self.c = c
         self.r = r
+        self.video_dir = video_dir
 
     def get_radius(self, r_x, r_y, c_x, c_y):
         """
         Compute the dynamic radius based on the centroid and rad points.
-        This function b computes the distance between two points: centroid and rad point.
+        This function computes the distance between two points: centroid and rad point.
         """
         return np.sqrt((c_x - r_x)**2 + (c_y - r_y)**2)
 
-    def dynamic_time_in_roi(self, df, fps, minutes=None):
+    def get_fps(self, video_path):
+        """
+        Get the frames per second (fps) for the given video.
+
+        Args:
+            video_path (str): Path to the video file.
+
+        Returns:
+            float: Frames per second of the video.
+        """
+        video = cv2.VideoCapture(video_path)
+        fps = video.get(cv2.CAP_PROP_FPS)
+        video.release()
+        print(f"FPS for {video_path}: {fps}")
+        return fps
+
+    def map_videofile(self, h5_filename):
+        """
+        Find the corresponding video file for the given .h5 filename.
+
+        Args:
+            h5_filename (str): The .h5 filename.
+
+        Returns:
+            str: The path to the corresponding video file, or None if not found.
+        """
+        # Extract the root from the .h5 filename
+        root = h5_filename.split('DLC')[0]
+        
+        # Search for the corresponding video file in the video directory
+        for video_filename in os.listdir(self.video_dir):
+            if video_filename.startswith(root) and video_filename.endswith('.mp4'):
+                return os.path.join(self.video_dir, video_filename)
+        
+        return None
+
+    def dynamic_time_in_roi(self, df, video_path, minutes=None):
         """
         Compute the time spent in the ROI for each frame using dynamically calculated radii.
 
         Args:
             df (pd.DataFrame): DataFrame containing the x, y coordinates.
-            fps (float): Frames per second of the video.
+            video_path (str): Path to the video file.
             minutes (float, optional): Number of minutes to compute the time in ROI
                 If None, use the entire DataFrame.
 
         Returns:
-            float: Total time spent in the ROI.
+            tuple: Total time spent in the ROI in seconds and frames.
         """
+        fps = self.get_fps(video_path)
+        
         if minutes is not None:
             num_frames = int(minutes * 60 * fps)
             df = df.iloc[:num_frames]
@@ -519,8 +559,9 @@ class DynamicROI:
         distances = np.sqrt((x - c_x)**2 + (y - c_y)**2)
         in_roi = distances <= radii
 
-        time_in_roi = np.sum(in_roi) / fps
-        return time_in_roi
+        frames_in_roi = np.sum(in_roi)
+        time_in_roi = frames_in_roi / fps
+        return time_in_roi, frames_in_roi
     
 
 class TimeROIbins:
