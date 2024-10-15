@@ -177,6 +177,41 @@ def extract_roi_data(df, shape_type, roi_callback):
     video.release()
     return fps
 
+def get_fps(video_path):
+    """
+    Get the frames per second (fps) for the given video.
+
+    Args:
+        video_path (str): Path to the video file.
+
+    Returns:
+        float: Frames per second of the video.
+    """
+    video = cv2.VideoCapture(video_path)
+    fps = video.get(cv2.CAP_PROP_FPS)
+    video.release()
+    print(f"FPS for {video_path}: {fps}")
+    return fps
+
+def map_videofile(h5_filename, video_dir):
+    """
+    Find the corresponding video file for the given .h5 filename.
+
+    Args:
+        h5_filename (str): The .h5 filename.
+        video_dir (str): The directory containing the video files.
+
+    Returns:
+        str: The path to the corresponding video file, or None if not found.
+    """
+    root = h5_filename.split('DLC')[0]
+    for video_filename in os.listdir(video_dir):
+        if video_filename.startswith(root) and video_filename.endswith('.mp4'):
+            return os.path.join(video_dir, video_filename)
+
+    print(f"No matching video file found for {h5_filename} in {video_dir}")
+    return None  
+
 class ROI(ABC):
     """
     Abstract base class for a region of interest (ROI).
@@ -467,7 +502,7 @@ class TimeinRoi:
         return pd.DataFrame(results) 
     
 class DynamicROI:
-    def __init__(self, c, r, video_dir, bodypart='centroid'):
+    def __init__(self, bodypart, c, r, video_dir):
         """
         Initialize the DynamicROI object.
         We use dynamic rois when animals move objects in the arena, so it does not have a fixed position. 
@@ -491,42 +526,6 @@ class DynamicROI:
         """
         return np.sqrt((c_x - r_x)**2 + (c_y - r_y)**2)
 
-    def get_fps(self, video_path):
-        """
-        Get the frames per second (fps) for the given video.
-
-        Args:
-            video_path (str): Path to the video file.
-
-        Returns:
-            float: Frames per second of the video.
-        """
-        video = cv2.VideoCapture(video_path)
-        fps = video.get(cv2.CAP_PROP_FPS)
-        video.release()
-        print(f"FPS for {video_path}: {fps}")
-        return fps
-
-    def map_videofile(self, h5_filename):
-        """
-        Find the corresponding video file for the given .h5 filename.
-
-        Args:
-            h5_filename (str): The .h5 filename.
-
-        Returns:
-            str: The path to the corresponding video file, or None if not found.
-        """
-        # Extract the root from the .h5 filename
-        root = h5_filename.split('DLC')[0]
-        
-        # Search for the corresponding video file in the video directory
-        for video_filename in os.listdir(self.video_dir):
-            if video_filename.startswith(root) and video_filename.endswith('.mp4'):
-                return os.path.join(self.video_dir, video_filename)
-        
-        return None
-
     def dynamic_time_in_roi(self, df, video_path, minutes=None):
         """
         Compute the time spent in the ROI for each frame using dynamically calculated radii.
@@ -540,7 +539,7 @@ class DynamicROI:
         Returns:
             tuple: Total time spent in the ROI in seconds and frames.
         """
-        fps = self.get_fps(video_path)
+        fps = get_fps(video_path)
         
         if minutes is not None:
             num_frames = int(minutes * 60 * fps)
@@ -565,11 +564,9 @@ class DynamicROI:
     
 
 class TimeROIbins:
-    #TODO (Anna) make sure roi parameters needed are well read both for dynamic and static
-
     def __init__(self, df, bodypart, roi_type, roi_params):
         """
-        Initialize the TimeROIBINS object.
+        Initialize the TimeROIbins object.
 
         Args:
             df (pd.DataFrame): DataFrame containing the tracking data.
@@ -585,21 +582,22 @@ class TimeROIbins:
         if roi_type == 'static':
             self.roi_calculator = TimeinRoi(df, roi_params['roi'])
         elif roi_type == 'dynamic':
-            self.roi_calculator = DynamicROI(df, bodypart, roi_params['c'], roi_params['r'])
+            self.roi_calculator = DynamicROI(bodypart, roi_params['c'], roi_params['r'], roi_params['video_dir'])
         else:
             raise ValueError("Invalid ROI type. Must be 'static' or 'dynamic'.")
         
-    def calculate_time_in_roi_bins(self, fps, bin_size_sec):
+    def calculate_time_in_roi_bins(self, video_path, bin_size_sec):
         """
         Compute the time spent in the ROI for each bin of time.
 
         Args:
-            fps (float): Frames per second of the video.
+            video_path (str): Path to the video file.
             bin_size_sec (float): Size of each bin in seconds.
 
         Returns:
             pd.DataFrame: DataFrame with time spent in ROI for each bin.
         """
+        fps = get_fps(video_path)
         bin_size_frames = int(bin_size_sec * fps)
         num_bins = int(np.ceil(len(self.df) / bin_size_frames))
 
@@ -609,14 +607,14 @@ class TimeROIbins:
             end_frame = min((i + 1) * bin_size_frames, len(self.df))
             df_bin = self.df.iloc[start_frame:end_frame]
             if self.roi_type == 'static':
-                time_in_roi = self.roi_calculator.time_in_rois(fps, minutes=None)
+                time_in_roi = self.roi_calculator.time_in_rois(fps, minutes=None) #TODO (Anna) make sure this is working, test this function!
             else:
-                time_in_roi = self.roi_calculator.dynamic_time_in_roi(fps, minutes=None)
+                time_in_roi = self.roi_calculator.dynamic_time_in_roi(df_bin, video_path, minutes=None)
             results.append({
                 'bin': i + 1,
                 'start_frame': start_frame,
                 'end_frame': end_frame,
-                'time_in_roi': time_in_roi
+                'time_in_roi': time_in_roi[0]  
             })
 
         return pd.DataFrame(results)
