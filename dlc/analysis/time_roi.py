@@ -618,3 +618,53 @@ class TimeROIbins:
             })
 
         return pd.DataFrame(results)
+    
+
+def discrimination_index(file_path, left, right, format = 'csv'): 
+    """
+    Calculate the discrimination index from the given CSV file.
+                    
+    Args:
+        file_path (str): Path to the CSV file.
+        left (str): Name of the column representing the left side.
+        right (str): Name of the column representing the right side.
+        format (str): Format of the file ('csv' or 'h5')
+    Returns:
+        pd.DataFrame: DataFrame with the calculated discrimination index.
+    """
+    if format == 'csv': 
+        data = pd.read_csv(file_path, delimiter=';')
+    elif format == 'h5':
+        data = pd.read_hdf(file_path)
+    else: 
+        raise ValueError("Invalid format. Must be 'csv' or 'h5'.")
+    
+    results = []
+    g_data = data.groupby(['animal', 'session', 'age', 'genotype']) #group data by factors
+    for (animal, session, age, group), g_data in g_data:
+            for _, row in g_data.iterrows():
+                if row['new'] == 'L':
+                    time_new = row[left]
+                    time_familiar = row[right]
+                elif row['new'] == 'R':
+                    time_new = row[right]
+                    time_familiar = row[left]
+                else:
+                    continue
+
+                denominator = time_new + time_familiar
+                if denominator == 0:
+                    discrimination_index = np.nan
+                else:
+                    discrimination_index = (time_new - time_familiar) / denominator
+
+            results.append({
+                    'animal': animal,
+                    'session': session,
+                    'age': age,
+                    'group': group,
+                    'discrimination_index': discrimination_index
+                })
+    
+    results_df = pd.DataFrame(results)
+    return results_df
