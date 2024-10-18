@@ -502,6 +502,8 @@ class TimeinRoi:
         return pd.DataFrame(results) 
     
 class DynamicROI:
+    #only implemented for CIRCULAR ROI, not supported for rectangles
+    #TODO: implement for rectangles @Anna 
     def __init__(self, bodypart, c, r, video_dir):
         """
         Initialize the DynamicROI object.
